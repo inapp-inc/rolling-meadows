@@ -64,8 +64,6 @@
 			preview.innerHTML =
 				'<h3>' + RM.Components.escapeHtml(workflow.name) + '</h3>' +
 				'<p>' + RM.Components.escapeHtml(workflow.description) + '</p>' +
-				(workflow.exampleProgram ? '<p class="workflow-preview-example"><em>' +
-					RM.Components.escapeHtml(workflow.exampleProgram) + '</em></p>' : '') +
 				'<ol class="workflow-preview-stages">' +
 				workflow.stages.map(function (s) {
 					return '<li><strong>' + RM.Components.escapeHtml(s.label) + '</strong>' +
