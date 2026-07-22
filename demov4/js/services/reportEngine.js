@@ -108,6 +108,60 @@
 				byCbo[row.cboName] = (byCbo[row.cboName] || 0) + 1;
 			});
 			return { total: rows.length, byStatus: byStatus, byCbo: byCbo };
+		},
+
+		caseloadSuccessMetrics: function (caseload, overdueCount) {
+			var clientIds = {};
+			caseload.forEach(function (c) { clientIds[c.id] = true; });
+			var total = caseload.length;
+			var riskOrder = { Low: 1, Medium: 2, Moderate: 2, High: 3 };
+
+			var enrollments = RM.ServiceEnrollmentRepository.findAll().filter(function (e) {
+				return !e.voided && clientIds[e.clientId];
+			});
+			var clientsWithServices = {};
+			enrollments.forEach(function (e) { clientsWithServices[e.clientId] = true; });
+
+			var activeGoals = RM.CarePlanRepository.findAll().filter(function (cp) {
+				if (cp.voided || !clientIds[cp.clientId]) { return false; }
+				return cp.status === 'In Progress' || /^complete/i.test(cp.status || '');
+			});
+
+			var completeIntakes = caseload.filter(function (c) { return !c.incompleteIntake; }).length;
+			var overdue = typeof overdueCount === 'number' ? overdueCount : 0;
+			var followUpOnTrackPct = total ? Math.round(((total - Math.min(overdue, total)) / total) * 100) : 100;
+			var servicesPct = total ? Math.round((Object.keys(clientsWithServices).length / total) * 100) : 0;
+
+			var riskImprovements = 0;
+			caseload.forEach(function (c) {
+				RM.ReassessmentRepository.findByClientId(c.id).forEach(function (r) {
+					if (!r.previousRatings || !r.newRatings) { return; }
+					var improved = false;
+					Object.keys(r.newRatings).forEach(function (key) {
+						var prev = riskOrder[r.previousRatings[key]] || 0;
+						var curr = riskOrder[r.newRatings[key]] || 0;
+						if (curr && prev && curr < prev) { improved = true; }
+					});
+					if (improved) { riskImprovements += 1; }
+				});
+			});
+
+			var cboConfirmed = RM.CBOReferralRepository.findAll().filter(function (r) {
+				return clientIds[r.clientId] && r.status === 'Confirmed';
+			}).length;
+
+			return {
+				total: total,
+				serviceEnrollments: enrollments.length,
+				clientsWithServices: Object.keys(clientsWithServices).length,
+				activeGoals: activeGoals.length,
+				completeIntakes: completeIntakes,
+				intakeCompletePct: total ? Math.round((completeIntakes / total) * 100) : 0,
+				followUpOnTrackPct: followUpOnTrackPct,
+				servicesConnectedPct: servicesPct,
+				riskImprovements: riskImprovements,
+				cboConfirmed: cboConfirmed
+			};
 		}
 	};
 })();

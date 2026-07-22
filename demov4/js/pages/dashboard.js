@@ -34,10 +34,15 @@
 				var riskReport = buildRiskReport(riskGroups);
 				var total = caseload.length;
 				var highCount = (riskGroups.High || []).length;
+				var success = RM.ReportEngine.caseloadSuccessMetrics(caseload, overdue.length);
 
 				main.innerHTML =
 					RM.Components.pageHeader('At a Glance') +
+					renderSuccessBanner(success) +
 					'<div class="card-grid dashboard-stat-grid">' +
+					RM.Components.statCard(success.serviceEnrollments, 'Services Connected', 'link', 'success', null) +
+					RM.Components.statCard(success.activeGoals, 'Care Goals Active', 'clipboard', 'success', null) +
+					RM.Components.statCard(success.riskImprovements, 'Risk Improvements', 'trendUp', 'success', null) +
 					RM.Components.statCard(caseload.length, 'Active Caseload', 'users', 'primary', null) +
 					RM.Components.statCard(overdue.length, 'Overdue Follow-ups', 'clock', 'warning', null) +
 					RM.Components.statCard(incomplete.length, 'Incomplete Intakes', 'clipboard', 'accent', null) +
@@ -45,6 +50,12 @@
 					'<div class="dashboard-stack">' +
 					'<div class="card">' +
 					'<div class="card-header"><h2>Program Overview</h2></div>' +
+					'<div class="snapshot-bar snapshot-bar-success">' +
+					'<div class="snapshot-item snap-success"><span class="snap-value">' + success.intakeCompletePct + '%</span><span class="snap-label">Intakes complete</span></div>' +
+					'<div class="snapshot-item snap-success"><span class="snap-value">' + success.followUpOnTrackPct + '%</span><span class="snap-label">Follow-ups on track</span></div>' +
+					'<div class="snapshot-item snap-success"><span class="snap-value">' + success.clientsWithServices + '</span><span class="snap-label">Receiving services</span></div>' +
+					'<div class="snapshot-item snap-success"><span class="snap-value">' + success.cboConfirmed + '</span><span class="snap-label">CBO partners confirmed</span></div>' +
+					'</div>' +
 					'<div class="snapshot-bar">' +
 					'<div class="snapshot-item"><span class="snap-value">' + total + '</span><span class="snap-label">Total active</span></div>' +
 					'<div class="snapshot-item snap-alert"><span class="snap-value">' + highCount + '</span><span class="snap-label">High risk</span></div>' +
@@ -91,7 +102,7 @@
 
 	function wireStatScroll(main) {
 		var cards = main.querySelectorAll('.stat-card');
-		var filters = ['all', 'overdue', 'incomplete'];
+		var filters = [null, null, null, 'all', 'overdue', 'incomplete'];
 		cards.forEach(function (card, i) {
 			var filter = filters[i];
 			if (!filter) { return; }
@@ -167,6 +178,43 @@
 		return RISK_ORDER.map(function (level) {
 			return { riskLevel: level, count: (groups[level] || []).length };
 		}).filter(function (r) { return r.count > 0; });
+	}
+
+	function renderSuccessBanner(metrics) {
+		var progressRows = [
+			{ label: 'Intakes complete', pct: metrics.intakeCompletePct },
+			{ label: 'Follow-ups on track', pct: metrics.followUpOnTrackPct },
+			{ label: 'Clients receiving services', pct: metrics.servicesConnectedPct }
+		];
+
+		return '<section class="card dashboard-success-card" aria-label="Program impact summary">' +
+			'<div class="dashboard-success-layout">' +
+			'<div class="success-ring-wrap" aria-hidden="true">' +
+			'<div class="success-ring" style="--success-pct:' + metrics.intakeCompletePct + '">' +
+			'<div class="success-ring-inner">' +
+			'<span class="success-ring-value">' + metrics.intakeCompletePct + '%</span>' +
+			'<span class="success-ring-label">Intakes complete</span></div></div></div>' +
+			'<div class="dashboard-success-copy">' +
+			'<p class="dashboard-success-eyebrow">Program impact</p>' +
+			'<h2 class="dashboard-success-title">Strong outcomes across the caseload</h2>' +
+			'<p class="dashboard-success-lead">Clients are connected to services, care plans are active, and documented reassessments show measurable risk improvement.</p>' +
+			'<ul class="dashboard-success-highlights">' +
+			'<li><span class="success-highlight-icon" aria-hidden="true">' + RM.Components.icon('check') + '</span>' +
+			metrics.serviceEnrollments + ' active service enrollments</li>' +
+			'<li><span class="success-highlight-icon" aria-hidden="true">' + RM.Components.icon('check') + '</span>' +
+			metrics.activeGoals + ' care plan goals in progress</li>' +
+			'<li><span class="success-highlight-icon" aria-hidden="true">' + RM.Components.icon('check') + '</span>' +
+			metrics.riskImprovements + ' documented risk improvement' + (metrics.riskImprovements === 1 ? '' : 's') + '</li>' +
+			'</ul></div></div>' +
+			'<div class="success-progress-list">' +
+			progressRows.map(function (row) {
+				return '<div class="success-progress-row">' +
+					'<span class="success-progress-label">' + RM.Components.escapeHtml(row.label) + '</span>' +
+					'<div class="success-progress-track" role="presentation">' +
+					'<div class="success-progress-fill" style="width:' + row.pct + '%"></div></div>' +
+					'<span class="success-progress-value">' + row.pct + '%</span></div>';
+			}).join('') +
+			'</div></section>';
 	}
 
 	function renderRiskChart(report, groups, total) {
