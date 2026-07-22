@@ -95,7 +95,7 @@
 			'wf-youth-empowerment',
 			'School Attendance Support Workflow',
 			'Support families when school attendance or youth engagement is at risk.',
-			'School referral for chronic absenteeism — Example 1 from Parent Support Services',
+			'School referral for chronic absenteeism',
 			[
 				stage('intake', 'School Referral & Intake', 'School referral record assigned'),
 				stage('assessment', 'Family & Attendance Assessment', 'Barriers to attendance identified'),
@@ -120,7 +120,7 @@
 			'wf-parenting-skills',
 			'Parenting Skills Program Workflow',
 			'Build parenting confidence through coaching, groups, and counseling referrals.',
-			'Referral for child behavior challenges — Example 4 from Parent Support Services',
+			'Referral for child behavior challenges',
 			[
 				stage('intake', 'Referral & Intake', 'Parenting program referral received'),
 				stage('assessment', 'Parenting & Family Assessment', 'Behavior management and stress factors identified'),
@@ -188,7 +188,7 @@
 			'wf-family-stability',
 			'Family Stability Program Workflow',
 			'Stabilize housing and basic needs for families facing financial hardship.',
-			'Family request for assistance due to financial hardship — Example 3 from Parent Support Services',
+			'Family request for assistance due to financial hardship',
 			[
 				stage('intake', 'Referral & Intake', 'Housing stability referral received'),
 				stage('assessment', 'Stability Assessment', 'Employment, housing, and childcare findings'),
