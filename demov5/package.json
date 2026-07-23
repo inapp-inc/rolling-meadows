@@ -1,0 +1,11 @@
+{
+	"name": "rolling-meadows-demo",
+	"private": true,
+	"scripts": {
+		"encrypt-login": "staticrypt index.src.html -p rollingmeadows -c false --template-title \"Enter passkey to proceed\" && cp encrypted/index.src.html index.html"
+	},
+	"devDependencies": {
+		"exceljs": "^4.4.0",
+		"staticrypt": "^3.5.0"
+	}
+}
