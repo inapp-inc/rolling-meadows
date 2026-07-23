@@ -162,6 +162,50 @@
 				riskImprovements: riskImprovements,
 				cboConfirmed: cboConfirmed
 			};
+		},
+
+		caseloadRiskDrilldown: function (caseManagerId) {
+			var clients = caseManagerId
+				? RM.ClientRepository.findByCaseManager(caseManagerId)
+				: RM.Data.activeClients();
+			return clients.map(function (client) {
+				var assessment = RM.RiskAssessmentRepository.findLatest(client.id);
+				var cm = RM.UserRepository.findById(client.caseManagerId);
+				return {
+					clientName: client.name,
+					dob: client.dob,
+					phone: client.phone,
+					riskLevel: assessment ? assessment.overallRisk : 'Unknown',
+					compositeScore: assessment && assessment.compositeScore != null ? assessment.compositeScore : '',
+					processStage: RM.Components.workflowStageLabel(client),
+					caseManager: cm ? cm.name : '',
+					intakeStatus: client.incompleteIntake ? 'Incomplete' : 'Complete'
+				};
+			}).sort(function (a, b) { return a.clientName.localeCompare(b.clientName); });
+		},
+
+		dashboardCaseloadDrilldown: function (caseload, filter, overdueByClientId) {
+			var clients = caseload.slice();
+			if (filter === 'overdue') {
+				clients = clients.filter(function (c) { return overdueByClientId[c.id]; });
+			} else if (filter === 'incomplete') {
+				clients = clients.filter(function (c) { return c.incompleteIntake; });
+			}
+			return clients.map(function (client) {
+				var assessment = RM.RiskAssessmentRepository.findLatest(client.id);
+				var overdue = overdueByClientId[client.id];
+				return {
+					clientName: client.name,
+					dob: client.dob,
+					phone: client.phone,
+					processStage: RM.Components.workflowStageLabel(client),
+					riskLevel: assessment ? assessment.overallRisk : 'Unknown',
+					followUpStatus: overdue
+						? overdue.daysOverdue + ' days overdue (' + overdue.cadence + ')'
+						: 'Current',
+					intakeStatus: client.incompleteIntake ? 'Incomplete' : 'Complete'
+				};
+			}).sort(function (a, b) { return a.clientName.localeCompare(b.clientName); });
 		}
 	};
 })();

@@ -180,6 +180,18 @@
 	flex-wrap: wrap;
 	gap: 0.75rem;
 }
+.caseload-card-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	align-items: center;
+	margin-left: auto;
+}
+.dashboard-success-card-header {
+	border-bottom: none;
+	margin-bottom: 0;
+	padding-bottom: 0;
+}
 .caseload-filter-bar {
 	display: flex;
 	flex-wrap: wrap;

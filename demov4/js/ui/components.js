@@ -224,7 +224,10 @@
 		},
 
 		exportCsv: function (filename, rows, columns) {
-			if (!rows.length) { return; }
+			if (!rows.length) {
+				this.showToast('No data to export.', 'warning');
+				return;
+			}
 			var header = columns.map(function (c) { return c.label; }).join(',');
 			var lines = rows.map(function (row) {
 				return columns.map(function (c) {
@@ -243,6 +246,610 @@
 			a.download = filename;
 			a.click();
 			URL.revokeObjectURL(a.href);
+		},
+
+		exportXlsx: function (filename, rows, columns, options) {
+			options = options || {};
+			if (!rows.length) {
+				this.showToast('No data to export.', 'warning');
+				return;
+			}
+			if (typeof ExcelJS === 'undefined') {
+				this.exportCsv(String(filename).replace(/\.xlsx$/i, '.csv'), rows, columns);
+				this.showToast('Spreadsheet library unavailable — exported CSV instead.', 'warning');
+				return;
+			}
+
+			var self = this;
+			var workbook = new ExcelJS.Workbook();
+			workbook.creator = 'Rolling Meadows Case Management';
+			workbook.created = new Date();
+			var sheet = workbook.addWorksheet((options.sheetName || 'Data').substring(0, 31));
+			var startRow = 1;
+
+			if (options.title) {
+				sheet.mergeCells(1, 1, 1, columns.length);
+				var titleCell = sheet.getCell(1, 1);
+				titleCell.value = options.title;
+				titleCell.font = { bold: true, size: 14, color: { argb: 'FF1A3A5C' } };
+				titleCell.alignment = { vertical: 'middle' };
+				sheet.getRow(1).height = 28;
+				startRow = 2;
+			}
+
+			sheet.columns = columns.map(function (c) {
+				return {
+					key: c.key,
+					width: Math.min(Math.max(String(c.label).length + 4, 14), 42)
+				};
+			});
+
+			var headerRow = sheet.getRow(startRow);
+			columns.forEach(function (c, index) {
+				var cell = headerRow.getCell(index + 1);
+				cell.value = c.label;
+				cell.font = { bold: true, color: { argb: 'FF1A3A5C' } };
+				cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF4FB' } };
+				cell.border = { bottom: { style: 'thin', color: { argb: 'FFC5D4E8' } } };
+				cell.alignment = { vertical: 'middle' };
+			});
+			headerRow.height = 22;
+
+			rows.forEach(function (row, rowIndex) {
+				var dataRow = sheet.getRow(startRow + 1 + rowIndex);
+				columns.forEach(function (c, index) {
+					var value = row[c.key];
+					dataRow.getCell(index + 1).value = value == null ? '' : value;
+				});
+				if (rowIndex % 2 === 1) {
+					dataRow.eachCell({ includeEmpty: true }, function (cell) {
+						cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+					});
+				}
+			});
+
+			if (rows.length) {
+				sheet.autoFilter = {
+					from: { row: startRow, column: 1 },
+					to: { row: startRow + rows.length, column: columns.length }
+				};
+			}
+			sheet.views = [{ state: 'frozen', ySplit: startRow }];
+
+			workbook.xlsx.writeBuffer().then(function (buffer) {
+				var blob = new Blob([buffer], {
+					type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+				});
+				var outName = String(filename);
+				if (!/\.xlsx$/i.test(outName)) {
+					outName = outName.replace(/\.csv$/i, '').replace(/\.xlsx$/i, '') + '.xlsx';
+				}
+				var a = document.createElement('a');
+				a.href = URL.createObjectURL(blob);
+				a.download = outName;
+				a.click();
+				URL.revokeObjectURL(a.href);
+			}).catch(function () {
+				self.showToast('Could not export spreadsheet.', 'warning');
+			});
+		},
+
+		downloadBar: function (options) {
+			options = options || {};
+			var parts = [];
+			var spreadsheetId = options.spreadsheetId || options.csvId;
+			if (options.imageTarget) {
+				parts.push('<button type="button" class="btn btn-secondary btn-sm" data-download-image="' +
+					this.escapeHtml(options.imageTarget) + '">Download image</button>');
+			}
+			if (spreadsheetId) {
+				parts.push('<button type="button" class="btn btn-secondary btn-sm" data-download-spreadsheet="' +
+					this.escapeHtml(spreadsheetId) + '">Download XLSX</button>');
+			}
+			if (!parts.length) { return ''; }
+			return '<div class="download-actions">' + parts.join('') + '</div>';
+		},
+
+		wireDownloadActions: function (root, handlers) {
+			root = root || document;
+			handlers = handlers || {};
+			var spreadsheetHandlers = handlers.spreadsheet || handlers.csv || {};
+			root.querySelectorAll('[data-download-image]').forEach(function (btn) {
+				btn.addEventListener('click', function () {
+					var targetId = btn.getAttribute('data-download-image');
+					if (handlers.images && handlers.images[targetId]) {
+						handlers.images[targetId]();
+						return;
+					}
+					var el = document.getElementById(targetId);
+					RM.Components.exportElementAsPng(el, targetId + '.png');
+				});
+			});
+			root.querySelectorAll('[data-download-spreadsheet]').forEach(function (btn) {
+				btn.addEventListener('click', function () {
+					var id = btn.getAttribute('data-download-spreadsheet');
+					if (spreadsheetHandlers[id]) {
+						spreadsheetHandlers[id]();
+					}
+				});
+			});
+		},
+
+		_downloadBlob: function (blob, filename) {
+			var a = document.createElement('a');
+			a.href = URL.createObjectURL(blob);
+			a.download = filename;
+			a.click();
+			URL.revokeObjectURL(a.href);
+		},
+
+		exportCanvasAsPng: function (canvas, filename) {
+			var self = this;
+			try {
+				canvas.toBlob(function (blob) {
+					if (blob) {
+						self._downloadBlob(blob, filename);
+						return;
+					}
+					self._downloadCanvasDataUrl(canvas, filename);
+				}, 'image/png');
+			} catch (e) {
+				self._downloadCanvasDataUrl(canvas, filename);
+			}
+		},
+
+		_downloadCanvasDataUrl: function (canvas, filename) {
+			try {
+				this._downloadBlob(this._dataUrlToBlob(canvas.toDataURL('image/png')), filename);
+			} catch (e) {
+				this.showToast('Could not export image.', 'warning');
+			}
+		},
+
+		_dataUrlToBlob: function (dataUrl) {
+			var parts = dataUrl.split(',');
+			var mime = parts[0].match(/:(.*?);/)[1];
+			var binary = atob(parts[1]);
+			var len = binary.length;
+			var buffer = new Uint8Array(len);
+			var i;
+			for (i = 0; i < len; i++) {
+				buffer[i] = binary.charCodeAt(i);
+			}
+			return new Blob([buffer], { type: mime });
+		},
+
+		_measureCanvasText: function (ctx, text, maxWidth) {
+			text = text == null ? '' : String(text);
+			if (!maxWidth || ctx.measureText(text).width <= maxWidth) {
+				return text;
+			}
+			while (text.length > 1 && ctx.measureText(text + '…').width > maxWidth) {
+				text = text.slice(0, -1);
+			}
+			return text + '…';
+		},
+
+		exportDataTablePng: function (title, columns, rows, filename, options) {
+			options = options || {};
+			if (!rows.length) {
+				this.showToast('No data to export.', 'warning');
+				return;
+			}
+			var pad = 24;
+			var rowH = 34;
+			var headerH = 36;
+			var titleBlockH = options.subtitle ? 72 : 52;
+			var colWidths = columns.map(function (c) {
+				var max = String(c.label).length;
+				rows.forEach(function (row) {
+					var value = String(row[c.key] == null ? '' : row[c.key]);
+					if (value.length > max) { max = value.length; }
+				});
+				return Math.min(Math.max(max * 7 + 28, 88), 240);
+			});
+			var width = Math.max(pad * 2 + colWidths.reduce(function (sum, w) { return sum + w; }, 0), 420);
+			var height = titleBlockH + headerH + rows.length * rowH + pad;
+			var scale = 2;
+			var canvas = document.createElement('canvas');
+			canvas.width = width * scale;
+			canvas.height = height * scale;
+			var ctx = canvas.getContext('2d');
+			ctx.scale(scale, scale);
+			ctx.fillStyle = '#ffffff';
+			ctx.fillRect(0, 0, width, height);
+			ctx.fillStyle = '#1a3a5c';
+			ctx.font = '700 18px Arial';
+			ctx.fillText(title, pad, 30);
+			if (options.subtitle) {
+				ctx.fillStyle = '#64748b';
+				ctx.font = '600 13px Arial';
+				ctx.fillText(options.subtitle, pad, 52);
+			}
+			var y = titleBlockH;
+			var x = pad;
+			columns.forEach(function (c, index) {
+				ctx.fillStyle = '#eef4fb';
+				ctx.fillRect(x, y, colWidths[index], headerH);
+				ctx.fillStyle = '#1a3a5c';
+				ctx.font = '700 12px Arial';
+				ctx.fillText(c.label, x + 10, y + 22);
+				x += colWidths[index];
+			});
+			rows.forEach(function (row, rowIndex) {
+				var rowY = y + headerH + rowIndex * rowH;
+				x = pad;
+				columns.forEach(function (c, index) {
+					if (rowIndex % 2 === 1) {
+						ctx.fillStyle = '#f8fafc';
+						ctx.fillRect(x, rowY, colWidths[index], rowH);
+					}
+					ctx.fillStyle = '#334155';
+					ctx.font = '600 13px Arial';
+					ctx.fillText(
+						this._measureCanvasText(ctx, row[c.key], colWidths[index] - 16),
+						x + 10,
+						rowY + 22
+					);
+					x += colWidths[index];
+				}, this);
+			}, this);
+			this.exportCanvasAsPng(canvas, filename);
+		},
+
+		exportSummaryPanelsPng: function (title, lead, panels, filename) {
+			if (!panels.length) {
+				this.showToast('No data to export.', 'warning');
+				return;
+			}
+			var pad = 24;
+			var panelGap = 20;
+			var panelWidth = 300;
+			var rowH = 30;
+			var headerH = 34;
+			var width = pad * 2 + panels.length * panelWidth + (panels.length - 1) * panelGap;
+			var panelHeights = panels.map(function (panel) {
+				return 52 + headerH + panel.rows.length * rowH + 16;
+			});
+			var height = 72 + Math.max.apply(null, panelHeights) + pad;
+			var scale = 2;
+			var canvas = document.createElement('canvas');
+			canvas.width = width * scale;
+			canvas.height = height * scale;
+			var ctx = canvas.getContext('2d');
+			ctx.scale(scale, scale);
+			ctx.fillStyle = '#ffffff';
+			ctx.fillRect(0, 0, width, height);
+			ctx.fillStyle = '#1a3a5c';
+			ctx.font = '700 18px Arial';
+			ctx.fillText(title, pad, 30);
+			ctx.fillStyle = '#64748b';
+			ctx.font = '600 13px Arial';
+			ctx.fillText(lead, pad, 54);
+			panels.forEach(function (panel, panelIndex) {
+				var x = pad + panelIndex * (panelWidth + panelGap);
+				var y = 72;
+				ctx.fillStyle = '#1a3a5c';
+				ctx.font = '700 14px Arial';
+				ctx.fillText(panel.title, x, y + 18);
+				y += 34;
+				ctx.fillStyle = '#eef4fb';
+				ctx.fillRect(x, y, panelWidth, headerH);
+				ctx.fillStyle = '#1a3a5c';
+				ctx.font = '700 12px Arial';
+				ctx.fillText('Item', x + 10, y + 22);
+				ctx.fillText('Count', x + panelWidth - 56, y + 22);
+				panel.rows.forEach(function (row, rowIndex) {
+					var rowY = y + headerH + rowIndex * rowH;
+					if (rowIndex % 2 === 1) {
+						ctx.fillStyle = '#f8fafc';
+						ctx.fillRect(x, rowY, panelWidth, rowH);
+					}
+					ctx.fillStyle = '#334155';
+					ctx.font = '600 13px Arial';
+					ctx.fillText(this._measureCanvasText(ctx, row.label, panelWidth - 90), x + 10, rowY + 20);
+					ctx.fillText(String(row.value), x + panelWidth - 56, rowY + 20);
+				}, this);
+			}, this);
+			this.exportCanvasAsPng(canvas, filename);
+		},
+
+		exportProgramImpactPng: function (metrics, filename) {
+			var width = 760;
+			var height = 360;
+			var scale = 2;
+			var canvas = document.createElement('canvas');
+			canvas.width = width * scale;
+			canvas.height = height * scale;
+			var ctx = canvas.getContext('2d');
+			ctx.scale(scale, scale);
+			ctx.fillStyle = '#ffffff';
+			ctx.fillRect(0, 0, width, height);
+			ctx.fillStyle = '#1a3a5c';
+			ctx.font = '700 20px Arial';
+			ctx.fillText('Program impact', 24, 32);
+			var cx = 92;
+			var cy = 132;
+			var radius = 58;
+			var pct = metrics.intakeCompletePct / 100;
+			ctx.beginPath();
+			ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+			ctx.strokeStyle = '#e2e8f0';
+			ctx.lineWidth = 12;
+			ctx.stroke();
+			ctx.beginPath();
+			ctx.arc(cx, cy, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct);
+			ctx.strokeStyle = '#10b981';
+			ctx.lineWidth = 12;
+			ctx.stroke();
+			ctx.fillStyle = '#1a3a5c';
+			ctx.font = '700 24px Arial';
+			ctx.textAlign = 'center';
+			ctx.fillText(metrics.intakeCompletePct + '%', cx, cy + 4);
+			ctx.font = '600 11px Arial';
+			ctx.fillStyle = '#64748b';
+			ctx.fillText('Intakes complete', cx, cy + 22);
+			ctx.textAlign = 'left';
+			ctx.fillStyle = '#1a3a5c';
+			ctx.font = '700 18px Arial';
+			ctx.fillText('Strong outcomes across the caseload', 180, 88);
+			ctx.fillStyle = '#475569';
+			ctx.font = '600 13px Arial';
+			var highlights = [
+				metrics.serviceEnrollments + ' active service enrollments',
+				metrics.activeGoals + ' care plan goals in progress',
+				metrics.riskImprovements + ' documented risk improvement' + (metrics.riskImprovements === 1 ? '' : 's')
+			];
+			highlights.forEach(function (line, index) {
+				ctx.fillStyle = '#10b981';
+				ctx.beginPath();
+				ctx.arc(188, 118 + index * 28, 5, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.fillStyle = '#334155';
+				ctx.fillText(line, 204, 122 + index * 28);
+			});
+			var progressRows = [
+				{ label: 'Intakes complete', pct: metrics.intakeCompletePct },
+				{ label: 'Follow-ups on track', pct: metrics.followUpOnTrackPct },
+				{ label: 'Clients receiving services', pct: metrics.servicesConnectedPct }
+			];
+			var barY = 228;
+			progressRows.forEach(function (row) {
+				ctx.fillStyle = '#334155';
+				ctx.font = '600 13px Arial';
+				ctx.fillText(row.label, 24, barY);
+				ctx.fillStyle = '#e5e7eb';
+				ctx.fillRect(260, barY - 12, 420, 16);
+				ctx.fillStyle = '#10b981';
+				ctx.fillRect(260, barY - 12, Math.max(420 * (row.pct / 100), 4), 16);
+				ctx.fillStyle = '#1a3a5c';
+				ctx.font = '700 13px Arial';
+				ctx.fillText(row.pct + '%', 696, barY);
+				barY += 36;
+			});
+			this.exportCanvasAsPng(canvas, filename);
+		},
+
+		exportProgramOverviewPng: function (metrics, riskReport, total, stats, filename) {
+			stats = stats || {};
+			var colors = { High: '#ef4444', Medium: '#f59e0b', Moderate: '#d97706', Low: '#10b981', Unknown: '#94a3b8' };
+			var width = 760;
+			var rowHeight = 44;
+			var height = 250 + (riskReport.length ? riskReport.length * rowHeight + 40 : 80);
+			var scale = 2;
+			var canvas = document.createElement('canvas');
+			canvas.width = width * scale;
+			canvas.height = height * scale;
+			var ctx = canvas.getContext('2d');
+			ctx.scale(scale, scale);
+			ctx.fillStyle = '#ffffff';
+			ctx.fillRect(0, 0, width, height);
+			ctx.fillStyle = '#1a3a5c';
+			ctx.font = '700 18px Arial';
+			ctx.fillText('Program Overview', 24, 30);
+			var snapshots = [
+				{ value: metrics.intakeCompletePct + '%', label: 'Intakes complete' },
+				{ value: metrics.followUpOnTrackPct + '%', label: 'Follow-ups on track' },
+				{ value: String(metrics.clientsWithServices), label: 'Receiving services' },
+				{ value: String(metrics.cboConfirmed), label: 'CBO partners confirmed' },
+				{ value: String(total), label: 'Total active' },
+				{ value: String(stats.highCount || 0), label: 'High risk' },
+				{ value: String(stats.overdueLen || 0), label: 'Need follow-up' },
+				{ value: String(stats.incompleteLen || 0), label: 'Incomplete intake' }
+			];
+			var snapX = 24;
+			var snapY = 48;
+			snapshots.forEach(function (snap, index) {
+				if (index === 4) {
+					snapX = 24;
+					snapY += 58;
+				}
+				ctx.fillStyle = index < 4 ? '#ecfdf5' : '#f8fafc';
+				ctx.fillRect(snapX, snapY, 168, 48);
+				ctx.fillStyle = '#1a3a5c';
+				ctx.font = '700 18px Arial';
+				ctx.fillText(snap.value, snapX + 12, snapY + 22);
+				ctx.font = '600 11px Arial';
+				ctx.fillStyle = '#64748b';
+				ctx.fillText(snap.label, snapX + 12, snapY + 38);
+				snapX += 180;
+			});
+			var chartY = snapY + 72;
+			ctx.fillStyle = '#1a3a5c';
+			ctx.font = '700 15px Arial';
+			ctx.fillText('Caseload by risk level', 24, chartY);
+			if (!riskReport.length) {
+				ctx.fillStyle = '#64748b';
+				ctx.font = '600 13px Arial';
+				ctx.fillText('No risk data available.', 24, chartY + 28);
+			} else {
+				riskReport.forEach(function (r, index) {
+					var y = chartY + 16 + index * rowHeight;
+					var pct = total ? (r.count / total) : 0;
+					ctx.fillStyle = '#1a3a5c';
+					ctx.font = '600 13px Arial';
+					ctx.fillText(r.riskLevel, 24, y + 18);
+					ctx.fillStyle = '#e5e7eb';
+					ctx.fillRect(120, y, 560, 22);
+					ctx.fillStyle = colors[r.riskLevel] || colors.Unknown;
+					ctx.fillRect(120, y, Math.max(560 * pct, 4), 22);
+					ctx.fillStyle = '#374151';
+					ctx.font = '700 14px Arial';
+					ctx.fillText(String(r.count), 700, y + 18);
+				});
+			}
+			this.exportCanvasAsPng(canvas, filename);
+		},
+
+		exportElementAsPng: function (element, filename, options) {
+			options = options || {};
+			if (!element) {
+				this.showToast('Nothing to download.', 'warning');
+				return;
+			}
+			if (options.title && options.columns && options.rows) {
+				this.exportDataTablePng(options.title, options.columns, options.rows, filename, options);
+				return;
+			}
+			var tables = element.querySelectorAll('table.data-table');
+			if (tables.length === 1) {
+				var columns = [];
+				var headers = tables[0].querySelectorAll('thead th');
+				headers.forEach(function (th, index) {
+					columns.push({ key: 'c' + index, label: th.textContent.trim() });
+				});
+				var rows = [];
+				tables[0].querySelectorAll('tbody tr').forEach(function (tr) {
+					var row = {};
+					tr.querySelectorAll('td').forEach(function (td, index) {
+						row['c' + index] = td.textContent.trim();
+					});
+					rows.push(row);
+				});
+				var title = options.title || filename.replace(/\.png$/i, '').replace(/[-_]+/g, ' ');
+				this.exportDataTablePng(title, columns, rows, filename, options);
+				return;
+			}
+			if (tables.length >= 2) {
+				var leadEl = element.querySelector('.liaison-results-summary');
+				var lead = leadEl ? leadEl.textContent.trim() : '';
+				var panels = [];
+				element.querySelectorAll('.auditor-summary-grid > div').forEach(function (panelEl) {
+					var heading = panelEl.querySelector('h3');
+					var panelRows = [];
+					panelEl.querySelectorAll('tbody tr').forEach(function (tr) {
+						var cells = tr.querySelectorAll('td');
+						if (cells.length >= 2) {
+							panelRows.push({
+								label: cells[0].textContent.trim(),
+								value: cells[1].textContent.trim()
+							});
+						}
+					});
+					panels.push({
+						title: heading ? heading.textContent.trim() : 'Summary',
+						rows: panelRows
+					});
+				});
+				if (panels.length) {
+					this.exportSummaryPanelsPng(
+						options.title || filename.replace(/\.png$/i, '').replace(/[-_]+/g, ' '),
+						lead,
+						panels,
+						filename
+					);
+					return;
+				}
+			}
+			this.showToast('Nothing to export for this view.', 'warning');
+		},
+
+		exportRiskBarChartPng: function (report, total, filename) {
+			var colors = { High: '#ef4444', Medium: '#f59e0b', Moderate: '#d97706', Low: '#10b981', Unknown: '#94a3b8' };
+			var width = 760;
+			var rowHeight = 44;
+			var height = 56 + report.length * rowHeight;
+			var canvas = document.createElement('canvas');
+			canvas.width = width * 2;
+			canvas.height = height * 2;
+			var ctx = canvas.getContext('2d');
+			ctx.scale(2, 2);
+			ctx.fillStyle = '#ffffff';
+			ctx.fillRect(0, 0, width, height);
+			ctx.fillStyle = '#1a3a5c';
+			ctx.font = '700 16px Arial';
+			ctx.fillText('Caseload by risk level', 24, 28);
+			report.forEach(function (r, index) {
+				var y = 40 + index * rowHeight;
+				var pct = total ? (r.count / total) : 0;
+				ctx.fillStyle = '#1a3a5c';
+				ctx.font = '600 13px Arial';
+				ctx.fillText(r.riskLevel, 24, y + 18);
+				ctx.fillStyle = '#e5e7eb';
+				ctx.fillRect(120, y, 560, 22);
+				ctx.fillStyle = colors[r.riskLevel] || colors.Unknown;
+				ctx.fillRect(120, y, Math.max(560 * pct, 4), 22);
+				ctx.fillStyle = '#374151';
+				ctx.font = '700 14px Arial';
+				ctx.fillText(String(r.count), 700, y + 18);
+			});
+			this.exportCanvasAsPng(canvas, filename);
+		},
+
+		exportDonutChartPng: function (report, total, filename) {
+			var colors = { High: '#ef4444', Medium: '#f59e0b', Moderate: '#d97706', Low: '#10b981', Unknown: '#94a3b8' };
+			var width = 520;
+			var height = 280;
+			var canvas = document.createElement('canvas');
+			canvas.width = width * 2;
+			canvas.height = height * 2;
+			var ctx = canvas.getContext('2d');
+			ctx.scale(2, 2);
+			ctx.fillStyle = '#ffffff';
+			ctx.fillRect(0, 0, width, height);
+			var cx = 110;
+			var cy = 140;
+			var outer = 88;
+			var inner = 56;
+			var start = -Math.PI / 2;
+			report.forEach(function (r) {
+				var slice = total ? (r.count / total) * Math.PI * 2 : 0;
+				if (slice <= 0) { return; }
+				ctx.beginPath();
+				ctx.arc(cx, cy, outer, start, start + slice);
+				ctx.arc(cx, cy, inner, start + slice, start, true);
+				ctx.closePath();
+				ctx.fillStyle = colors[r.riskLevel] || colors.Unknown;
+				ctx.fill();
+				start += slice;
+			});
+			ctx.beginPath();
+			ctx.arc(cx, cy, inner, 0, Math.PI * 2);
+			ctx.fillStyle = '#ffffff';
+			ctx.fill();
+			ctx.strokeStyle = '#e5e7eb';
+			ctx.lineWidth = 1;
+			ctx.stroke();
+			ctx.fillStyle = '#1a3a5c';
+			ctx.font = '700 24px Arial';
+			ctx.textAlign = 'center';
+			ctx.fillText(String(total), cx, cy + 4);
+			ctx.font = '600 11px Arial';
+			ctx.fillStyle = '#64748b';
+			ctx.fillText('Active', cx, cy + 20);
+			ctx.textAlign = 'left';
+			var legendY = 48;
+			report.forEach(function (r) {
+				ctx.fillStyle = colors[r.riskLevel] || colors.Unknown;
+				ctx.beginPath();
+				ctx.arc(240, legendY, 6, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.fillStyle = '#334155';
+				ctx.font = '600 13px Arial';
+				ctx.fillText(r.riskLevel + ' (' + r.count + ')', 256, legendY + 4);
+				legendY += 28;
+			});
+			this.exportCanvasAsPng(canvas, filename);
 		},
 
 		formatDate: function (iso) {

@@ -3,6 +3,33 @@
 	'use strict';
 
 	var storeListenerBound = false;
+	var RISK_DRILLDOWN_COLUMNS = [
+		{ key: 'clientName', label: 'Client' },
+		{ key: 'dob', label: 'DOB' },
+		{ key: 'phone', label: 'Phone' },
+		{ key: 'riskLevel', label: 'Risk Level' },
+		{ key: 'compositeScore', label: 'Composite Score' },
+		{ key: 'processStage', label: 'Process Stage' },
+		{ key: 'caseManager', label: 'Case Manager' },
+		{ key: 'intakeStatus', label: 'Intake Status' }
+	];
+	var ENROLLMENT_COLUMNS = [
+		{ key: 'clientName', label: 'Client' },
+		{ key: 'dateEnrolled', label: 'Date Enrolled' },
+		{ key: 'eventName', label: 'Event' }
+	];
+	var OVERDUE_COLUMNS = [
+		{ key: 'clientName', label: 'Client' },
+		{ key: 'riskLevel', label: 'Risk' },
+		{ key: 'cadence', label: 'Cadence' },
+		{ key: 'daysOverdue', label: 'Days Overdue' }
+	];
+	var CBO_COLUMNS = [
+		{ key: 'clientName', label: 'Client' },
+		{ key: 'cboName', label: 'CBO' },
+		{ key: 'status', label: 'Status' },
+		{ key: 'date', label: 'Date' }
+	];
 
 	document.addEventListener('DOMContentLoaded', function () {
 		var isAuditor = RM.Session.getCurrentUser() && RM.Permissions.isAuditor();
@@ -47,29 +74,31 @@
 			RM.Components.statCard(snapshot.overdueFollowUps, 'Overdue Follow-ups', 'clock', 'accent', null) +
 			RM.Components.statCard(snapshot.openCboReferrals, 'Open CBO Referrals', 'link', 'success', null) +
 			'</div>' +
-			'<div class="card"><h2>Caseload by Risk Level</h2>' +
-			'<div id="auditor-report-risk"></div>' +
-			'<button type="button" class="btn btn-secondary btn-sm" id="export-auditor-risk">Export summary CSV</button></div>' +
-			'<div class="card"><h2>Enrollments by Program</h2>' +
+			'<div class="card"><div class="card-header"><h2>Caseload by Risk Level</h2>' +
+			RM.Components.downloadBar({ imageTarget: 'auditor-report-risk', csvId: 'auditor-report-risk' }) +
+			'</div><div id="auditor-report-risk"></div></div>' +
+			'<div class="card"><div class="card-header"><h2>Enrollments by Program</h2>' +
+			RM.Components.downloadBar({ csvId: 'auditor-report-event' }) + '</div>' +
 			'<div class="form-group"><label for="auditor-report-event">Program / event</label>' +
 			'<select id="auditor-report-event">' + events.map(function (e) {
 				return '<option value="' + e.id + '">' + RM.Components.escapeHtml(e.name) + '</option>';
 			}).join('') + '</select></div>' +
 			'<div id="auditor-report-event-data"></div></div>' +
-			'<div class="card"><h2>Overdue Follow-ups Summary</h2>' +
-			'<div id="auditor-report-overdue"></div></div>' +
-			'<div class="card"><h2>Open CBO Referrals Summary</h2>' +
-			'<div id="auditor-report-cbo"></div></div>';
+			'<div class="card"><div class="card-header"><h2>Overdue Follow-ups Summary</h2>' +
+			RM.Components.downloadBar({ imageTarget: 'auditor-report-overdue', csvId: 'auditor-report-overdue' }) +
+			'</div><div id="auditor-report-overdue"></div></div>' +
+			'<div class="card"><div class="card-header"><h2>Open CBO Referrals Summary</h2>' +
+			RM.Components.downloadBar({ imageTarget: 'auditor-report-cbo', csvId: 'auditor-report-cbo' }) +
+			'</div><div id="auditor-report-cbo"></div></div>';
 
 		document.getElementById('auditor-report-risk').innerHTML = renderRiskTable(riskData);
 
 		function refreshAuditorEnrollment() {
 			var eventId = document.getElementById('auditor-report-event').value;
-			var summary = RM.ReportEngine.enrollmentCountForEvent(eventId);
-			document.getElementById('auditor-report-event-data').innerHTML =
-				'<table class="data-table"><thead><tr><th>Program / event</th><th>Enrolled count</th></tr></thead><tbody>' +
-				'<tr><td>' + RM.Components.escapeHtml(summary.eventName) + '</td>' +
-				'<td><strong>' + summary.count + '</strong></td></tr></tbody></table>';
+			var eventData = RM.ReportEngine.enrolledInEvent(eventId);
+			document.getElementById('auditor-report-event-data').innerHTML = eventData.length
+				? renderEnrollmentTable(eventData)
+				: RM.Components.emptyState('No enrollments', 'No clients enrolled in this program yet.');
 		}
 
 		document.getElementById('auditor-report-event').addEventListener('change', refreshAuditorEnrollment);
@@ -78,10 +107,94 @@
 		document.getElementById('auditor-report-overdue').innerHTML = renderAuditorOverdueSummary(overdueSummary);
 		document.getElementById('auditor-report-cbo').innerHTML = renderAuditorCboSummary(cboSummary);
 
-		document.getElementById('export-auditor-risk').addEventListener('click', function () {
-			RM.Components.exportCsv('audit-caseload-by-risk.csv', riskData, [
-				{ key: 'riskLevel', label: 'Risk Level' }, { key: 'count', label: 'Count' }
-			]);
+		RM.Components.wireDownloadActions(main, {
+			images: {
+				'auditor-report-risk': function () {
+					var total = riskData.reduce(function (sum, row) { return sum + row.count; }, 0);
+					RM.Components.exportRiskBarChartPng(riskData, total, 'audit-caseload-by-risk.png');
+				},
+				'auditor-report-overdue': function () {
+					RM.Components.exportSummaryPanelsPng(
+						'Overdue follow-ups summary',
+						overdueSummary.total + ' overdue follow-up' + (overdueSummary.total === 1 ? '' : 's') + ' program-wide.',
+						[
+							{
+								title: 'By risk level',
+								rows: Object.keys(overdueSummary.byRisk).map(function (level) {
+									return { label: level, value: overdueSummary.byRisk[level] };
+								})
+							},
+							{
+								title: 'By cadence',
+								rows: Object.keys(overdueSummary.byCadence).map(function (cadence) {
+									return { label: cadence, value: overdueSummary.byCadence[cadence] };
+								})
+							}
+						],
+						'audit-overdue-followups.png'
+					);
+				},
+				'auditor-report-cbo': function () {
+					RM.Components.exportSummaryPanelsPng(
+						'Open CBO referrals summary',
+						cboSummary.total + ' open referral' + (cboSummary.total === 1 ? '' : 's') + ' pending confirmation.',
+						[
+							{
+								title: 'By status',
+								rows: Object.keys(cboSummary.byStatus).map(function (status) {
+									return { label: status, value: cboSummary.byStatus[status] };
+								})
+							},
+							{
+								title: 'By organization',
+								rows: Object.keys(cboSummary.byCbo).map(function (cbo) {
+									return { label: cbo, value: cboSummary.byCbo[cbo] };
+								})
+							}
+						],
+						'audit-cbo-referrals.png'
+					);
+				}
+			},
+			csv: {
+				'auditor-report-risk': function () {
+					RM.Components.exportXlsx(
+						'audit-caseload-by-risk-detail.xlsx',
+						RM.ReportEngine.caseloadRiskDrilldown(null),
+						RISK_DRILLDOWN_COLUMNS,
+						{ title: 'Audit — caseload by risk (client detail)', sheetName: 'Risk detail' }
+					);
+				},
+				'auditor-report-event': function () {
+					var eventId = document.getElementById('auditor-report-event').value;
+					var eventData = RM.ReportEngine.enrolledInEvent(eventId);
+					RM.Components.exportXlsx(
+						'audit-event-enrollment-detail.xlsx',
+						eventData,
+						ENROLLMENT_COLUMNS,
+						{
+							title: 'Audit — enrollments by program',
+							sheetName: 'Enrollments'
+						}
+					);
+				},
+				'auditor-report-overdue': function () {
+					RM.Components.exportXlsx(
+						'audit-overdue-followups-detail.xlsx',
+						RM.ReportEngine.overdueFollowUps(null),
+						OVERDUE_COLUMNS,
+						{ title: 'Audit — overdue follow-ups (client detail)', sheetName: 'Overdue' }
+					);
+				},
+				'auditor-report-cbo': function () {
+					RM.Components.exportXlsx(
+						'audit-cbo-referrals-detail.xlsx',
+						RM.ReportEngine.openCBOReferrals(),
+						CBO_COLUMNS,
+						{ title: 'Audit — open CBO referrals (client detail)', sheetName: 'CBO referrals' }
+					);
+				}
+			}
 		});
 	}
 
@@ -133,21 +246,22 @@
 
 		main.innerHTML =
 			RM.Components.modulePageHeader('reports') +
+			'<div class="card"><div class="card-header"><h2>Caseload by Risk Level</h2>' +
+			RM.Components.downloadBar({ imageTarget: 'report-risk', csvId: 'report-risk' }) +
+			'</div><div id="report-risk"></div></div>' +
+			'<div class="card"><div class="card-header"><h2>Clients Enrolled in Event</h2>' +
+			RM.Components.downloadBar({ imageTarget: 'report-event-data', csvId: 'report-event' }) + '</div>' +
 			'<div class="form-group"><label for="report-event">Event for enrollment report</label>' +
 			'<select id="report-event">' + events.map(function (e) {
 				return '<option value="' + e.id + '">' + RM.Components.escapeHtml(e.name) + '</option>';
 			}).join('') + '</select></div>' +
-			'<div class="card"><h2>Caseload by Risk Level</h2>' +
-			'<div id="report-risk"></div>' +
-			'<button type="button" class="btn btn-secondary btn-sm" id="export-risk">Export CSV</button></div>' +
-			'<div class="card"><h2>Clients Enrolled in Event</h2>' +
-			'<div id="report-event-data"></div>' +
-			'<button type="button" class="btn btn-secondary btn-sm" id="export-event">Export CSV</button></div>' +
-			'<div class="card"><h2>Overdue Follow-ups</h2>' +
-			'<div id="report-overdue"></div>' +
-			'<button type="button" class="btn btn-secondary btn-sm" id="export-overdue">Export CSV</button></div>' +
-			'<div class="card"><h2>Open CBO Referrals</h2>' +
-			'<div id="report-cbo"></div></div>';
+			'<div id="report-event-data"></div></div>' +
+			'<div class="card"><div class="card-header"><h2>Overdue Follow-ups</h2>' +
+			RM.Components.downloadBar({ imageTarget: 'report-overdue', csvId: 'report-overdue' }) +
+			'</div><div id="report-overdue"></div></div>' +
+			'<div class="card"><div class="card-header"><h2>Open CBO Referrals</h2>' +
+			RM.Components.downloadBar({ imageTarget: 'report-cbo', csvId: 'report-cbo' }) +
+			'</div><div id="report-cbo"></div></div>';
 
 		var riskData = RM.ReportEngine.caseloadByRisk();
 		document.getElementById('report-risk').innerHTML = renderRiskTable(riskData);
@@ -177,26 +291,76 @@
 			: RM.Components.emptyState('No open CBO referrals', 'All referrals confirmed.');
 		wireCboDrilldown(cboData);
 
-		document.getElementById('export-risk').addEventListener('click', function () {
-			RM.Components.exportCsv('caseload-by-risk.csv', riskData, [
-				{ key: 'riskLevel', label: 'Risk Level' }, { key: 'count', label: 'Count' }
-			]);
-		});
-		document.getElementById('export-event').addEventListener('click', function () {
-			var eventId = document.getElementById('report-event').value;
-			RM.Components.exportCsv('event-enrollment.csv', RM.ReportEngine.enrolledInEvent(eventId), [
-				{ key: 'clientName', label: 'Client' },
-				{ key: 'dateEnrolled', label: 'Date Enrolled' },
-				{ key: 'eventName', label: 'Event' }
-			]);
-		});
-		document.getElementById('export-overdue').addEventListener('click', function () {
-			RM.Components.exportCsv('overdue-followups.csv', overdueData, [
-				{ key: 'clientName', label: 'Client' },
-				{ key: 'riskLevel', label: 'Risk' },
-				{ key: 'cadence', label: 'Cadence' },
-				{ key: 'daysOverdue', label: 'Days Overdue' }
-			]);
+		RM.Components.wireDownloadActions(main, {
+			images: {
+				'report-risk': function () {
+					var total = riskData.reduce(function (sum, row) { return sum + row.count; }, 0);
+					RM.Components.exportRiskBarChartPng(riskData, total, 'caseload-by-risk.png');
+				},
+				'report-event-data': function () {
+					var eventId = document.getElementById('report-event').value;
+					var eventData = RM.ReportEngine.enrolledInEvent(eventId);
+					var event = RM.ReportEngine.EVENTS.find(function (e) { return e.id === eventId; });
+					RM.Components.exportDataTablePng(
+						'Clients enrolled in event',
+						ENROLLMENT_COLUMNS,
+						eventData,
+						'event-enrollment.png',
+						{ subtitle: event ? event.name : 'Selected program' }
+					);
+				},
+				'report-overdue': function () {
+					RM.Components.exportDataTablePng(
+						'Overdue follow-ups',
+						OVERDUE_COLUMNS,
+						overdueData,
+						'overdue-followups.png'
+					);
+				},
+				'report-cbo': function () {
+					RM.Components.exportDataTablePng(
+						'Open CBO referrals',
+						CBO_COLUMNS,
+						cboData,
+						'open-cbo-referrals.png'
+					);
+				}
+			},
+			csv: {
+				'report-risk': function () {
+					RM.Components.exportXlsx(
+						'caseload-by-risk-detail.xlsx',
+						RM.ReportEngine.caseloadRiskDrilldown(user.role === 'case_manager' ? user.id : null),
+						RISK_DRILLDOWN_COLUMNS,
+						{ title: 'Caseload by risk — client detail', sheetName: 'Risk detail' }
+					);
+				},
+				'report-event': function () {
+					var eventId = document.getElementById('report-event').value;
+					RM.Components.exportXlsx(
+						'event-enrollment-detail.xlsx',
+						RM.ReportEngine.enrolledInEvent(eventId),
+						ENROLLMENT_COLUMNS,
+						{ title: 'Clients enrolled in event', sheetName: 'Enrollments' }
+					);
+				},
+				'report-overdue': function () {
+					RM.Components.exportXlsx(
+						'overdue-followups-detail.xlsx',
+						RM.ReportEngine.overdueFollowUps(user.role === 'case_manager' ? user.id : null),
+						OVERDUE_COLUMNS,
+						{ title: 'Overdue follow-ups — client detail', sheetName: 'Overdue' }
+					);
+				},
+				'report-cbo': function () {
+					RM.Components.exportXlsx(
+						'open-cbo-referrals-detail.xlsx',
+						cboData,
+						CBO_COLUMNS,
+						{ title: 'Open CBO referrals — client detail', sheetName: 'CBO referrals' }
+					);
+				}
+			}
 		});
 	}
 

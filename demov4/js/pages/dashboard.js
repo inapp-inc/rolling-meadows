@@ -49,7 +49,10 @@
 					'</div>' +
 					'<div class="dashboard-stack">' +
 					'<div class="card">' +
-					'<div class="card-header"><h2>Program Overview</h2></div>' +
+					'<div class="card-header"><h2>Program Overview</h2>' +
+					RM.Components.downloadBar({ imageTarget: 'dashboard-program-visual', csvId: 'dashboard-risk-drilldown' }) +
+					'</div>' +
+					'<div id="dashboard-program-visual">' +
 					'<div class="snapshot-bar snapshot-bar-success">' +
 					'<div class="snapshot-item snap-success"><span class="snap-value">' + success.intakeCompletePct + '%</span><span class="snap-label">Intakes complete</span></div>' +
 					'<div class="snapshot-item snap-success"><span class="snap-value">' + success.followUpOnTrackPct + '%</span><span class="snap-label">Follow-ups on track</span></div>' +
@@ -63,15 +66,18 @@
 					'<div class="snapshot-item"><span class="snap-value">' + incomplete.length + '</span><span class="snap-label">Incomplete intake</span></div>' +
 					'</div>' +
 					'<h3 class="dashboard-subheading">Caseload by risk level</h3>' +
-					'<div class="risk-chart" id="risk-chart"></div>' +
+					'<div class="risk-chart" id="risk-chart"></div></div>' +
 					'</div>' +
 					'<div class="card">' +
-					'<div class="card-header"><h2>Risk Mix</h2></div>' +
-					'<div id="donut-chart"></div></div>' +
+					'<div class="card-header"><h2>Risk Mix</h2>' +
+					RM.Components.downloadBar({ imageTarget: 'donut-chart-visual' }) + '</div>' +
+					'<div id="donut-chart-visual"><div id="donut-chart"></div></div></div>' +
 					'<div class="card" id="caseload-section">' +
 					'<div class="card-header caseload-card-header">' +
 					'<h2>Full Caseload</h2>' +
-					'<a href="' + RM.Links.page('client-search') + '" class="btn btn-sm btn-secondary">Search all</a></div>' +
+					'<div class="caseload-card-actions">' +
+					RM.Components.downloadBar({ csvId: 'dashboard-caseload-drilldown' }) +
+					'<a href="' + RM.Links.page('client-search') + '" class="btn btn-sm btn-secondary">Search all</a></div></div>' +
 					'<div class="caseload-filter-bar" role="toolbar" aria-label="Filter caseload">' +
 					'<button type="button" class="caseload-filter-btn is-active" data-filter="all" aria-pressed="true">All (' + caseload.length + ')</button>' +
 					'<button type="button" class="caseload-filter-btn" data-filter="overdue" aria-pressed="false"' +
@@ -87,6 +93,7 @@
 				wireCaseloadFilters(caseload, overdueByClientId);
 				setCaseloadFilter('all');
 				wireStatScroll(main);
+				wireDashboardDownloads(main, user, caseload, overdueByClientId, riskReport, total, success, highCount, overdue.length, incomplete.length);
 			}
 		});
 	});
@@ -99,6 +106,25 @@
 		Low: 'risk-low',
 		Unknown: 'risk-unknown'
 	};
+	var RISK_DRILLDOWN_COLUMNS = [
+		{ key: 'clientName', label: 'Client' },
+		{ key: 'dob', label: 'DOB' },
+		{ key: 'phone', label: 'Phone' },
+		{ key: 'riskLevel', label: 'Risk Level' },
+		{ key: 'compositeScore', label: 'Composite Score' },
+		{ key: 'processStage', label: 'Process Stage' },
+		{ key: 'caseManager', label: 'Case Manager' },
+		{ key: 'intakeStatus', label: 'Intake Status' }
+	];
+	var CASELOAD_DRILLDOWN_COLUMNS = [
+		{ key: 'clientName', label: 'Client' },
+		{ key: 'dob', label: 'DOB' },
+		{ key: 'phone', label: 'Phone' },
+		{ key: 'processStage', label: 'Process Stage' },
+		{ key: 'riskLevel', label: 'Risk Level' },
+		{ key: 'followUpStatus', label: 'Follow-up Status' },
+		{ key: 'intakeStatus', label: 'Intake Status' }
+	];
 
 	function wireStatScroll(main) {
 		var cards = main.querySelectorAll('.stat-card');
@@ -187,7 +213,11 @@
 			{ label: 'Clients receiving services', pct: metrics.servicesConnectedPct }
 		];
 
-		return '<section class="card dashboard-success-card" aria-label="Program impact summary">' +
+		return '<section class="card dashboard-success-card" id="dashboard-success-card" aria-label="Program impact summary">' +
+			'<div class="card-header dashboard-success-card-header">' +
+			'<h2>Program impact</h2>' +
+			RM.Components.downloadBar({ imageTarget: 'dashboard-success-card' }) +
+			'</div>' +
 			'<div class="dashboard-success-layout">' +
 			'<div class="success-ring-wrap" aria-hidden="true">' +
 			'<div class="success-ring" style="--success-pct:' + metrics.intakeCompletePct + '">' +
@@ -195,7 +225,6 @@
 			'<span class="success-ring-value">' + metrics.intakeCompletePct + '%</span>' +
 			'<span class="success-ring-label">Intakes complete</span></div></div></div>' +
 			'<div class="dashboard-success-copy">' +
-			'<p class="dashboard-success-eyebrow">Program impact</p>' +
 			'<h2 class="dashboard-success-title">Strong outcomes across the caseload</h2>' +
 			'<p class="dashboard-success-lead">Clients are connected to services, care plans are active, and documented reassessments show measurable risk improvement.</p>' +
 			'<ul class="dashboard-success-highlights">' +
@@ -215,6 +244,52 @@
 					'<span class="success-progress-value">' + row.pct + '%</span></div>';
 			}).join('') +
 			'</div></section>';
+	}
+
+	function wireDashboardDownloads(main, user, caseload, overdueByClientId, riskReport, total, success, highCount, overdueLen, incompleteLen) {
+		RM.Components.wireDownloadActions(main, {
+			images: {
+				'dashboard-success-card': function () {
+					RM.Components.exportProgramImpactPng(success, 'program-impact.png');
+				},
+				'dashboard-program-visual': function () {
+					RM.Components.exportProgramOverviewPng(
+						success,
+						riskReport,
+						total,
+						{ highCount: highCount, overdueLen: overdueLen, incompleteLen: incompleteLen },
+						'program-overview.png'
+					);
+				},
+				'donut-chart-visual': function () {
+					RM.Components.exportDonutChartPng(riskReport, total, 'risk-mix-chart.png');
+				}
+			},
+			csv: {
+				'dashboard-risk-drilldown': function () {
+					RM.Components.exportXlsx(
+						'caseload-by-risk-detail.xlsx',
+						RM.ReportEngine.caseloadRiskDrilldown(
+							user.role === 'case_manager' ? user.id : null
+						),
+						RISK_DRILLDOWN_COLUMNS,
+						{ title: 'Caseload by risk — client detail', sheetName: 'Risk detail' }
+					);
+				},
+				'dashboard-caseload-drilldown': function () {
+					RM.Components.exportXlsx(
+						'caseload-detail.xlsx',
+						RM.ReportEngine.dashboardCaseloadDrilldown(
+							caseload,
+							caseloadState.activeFilter,
+							overdueByClientId
+						),
+						CASELOAD_DRILLDOWN_COLUMNS,
+						{ title: 'Full caseload — client detail', sheetName: 'Caseload' }
+					);
+				}
+			}
+		});
 	}
 
 	function renderRiskChart(report, groups, total) {

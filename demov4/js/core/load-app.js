@@ -40,6 +40,7 @@
 		'services/workflowService.js',
 		'seed/seedData.js',
 		'core/init.js',
+		'vendor/exceljs.min.js',
 		'ui/components.js',
 		'services/notificationService.js',
 		'ui/shell.js',
