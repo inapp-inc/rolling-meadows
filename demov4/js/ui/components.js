@@ -12,7 +12,9 @@
 			chart: '<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>',
 			check: '<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>',
 			download: '<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
-			trendUp: '<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>'
+			trendUp: '<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
+			image: '<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
+			spreadsheet: '<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>'
 		},
 
 		icon: function (name) {
@@ -334,17 +336,33 @@
 			});
 		},
 
+		downloadActionMarkup: function (kind) {
+			var download = this.icon('download');
+			if (kind === 'image') {
+				return '<span class="download-icon-combo" aria-hidden="true">' +
+					'<span class="download-icon-combo-item">' + download + '</span>' +
+					'<span class="download-icon-combo-item">' + this.icon('image') + '</span>' +
+					'</span>';
+			}
+			return '<span class="download-icon-combo" aria-hidden="true">' +
+				'<span class="download-icon-combo-item">' + download + '</span>' +
+				'<span class="download-icon-combo-label">XLSX</span>' +
+				'</span>';
+		},
+
 		downloadBar: function (options) {
 			options = options || {};
 			var parts = [];
 			var spreadsheetId = options.spreadsheetId || options.csvId;
 			if (options.imageTarget) {
-				parts.push('<button type="button" class="btn btn-secondary btn-sm" data-download-image="' +
-					this.escapeHtml(options.imageTarget) + '">Download image</button>');
+				parts.push('<button type="button" class="download-icon-btn download-icon-btn--combo" data-download-image="' +
+					this.escapeHtml(options.imageTarget) + '" aria-label="Download image" title="Download image">' +
+					this.downloadActionMarkup('image') + '</button>');
 			}
 			if (spreadsheetId) {
-				parts.push('<button type="button" class="btn btn-secondary btn-sm" data-download-spreadsheet="' +
-					this.escapeHtml(spreadsheetId) + '">Download XLSX</button>');
+				parts.push('<button type="button" class="download-icon-btn download-icon-btn--combo" data-download-spreadsheet="' +
+					this.escapeHtml(spreadsheetId) + '" aria-label="Download XLSX" title="Download XLSX">' +
+					this.downloadActionMarkup('spreadsheet') + '</button>');
 			}
 			if (!parts.length) { return ''; }
 			return '<div class="download-actions">' + parts.join('') + '</div>';
