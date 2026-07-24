@@ -26,6 +26,13 @@
 		}
 	}
 
+	function showSignInError(message) {
+		var el = document.getElementById('sign-in-error');
+		if (!el) { return; }
+		el.textContent = message || '';
+		el.classList.toggle('hidden', !message);
+	}
+
 	function applySignInLocale() {
 		document.title = RM.I18n.t('signIn.pageTitle');
 		document.getElementById('sign-in-title').textContent = RM.I18n.t('signIn.title');
@@ -36,6 +43,7 @@
 		document.getElementById('sign-in-hero').setAttribute('aria-label', RM.I18n.t('signIn.welcomeAria'));
 		document.getElementById('sign-in-locale-wrap').innerHTML = RM.I18n.renderSwitcher();
 		populateRoles();
+		showSignInError('');
 	}
 
 	document.addEventListener('DOMContentLoaded', function () {
@@ -46,10 +54,15 @@
 		RM.I18n.init();
 		RM.Seed.ensureLoaded();
 		applySignInLocale();
+		if (!RM.UserRepository.findById('usr-case-manager')) {
+			console.error('Sign-in seed data did not load. Check the browser console for missing script errors.');
+			showSignInError(RM.I18n.t('signIn.seedError'));
+		}
 		document.addEventListener('rm:locale-changed', applySignInLocale);
 
 		document.getElementById('sign-in-form').addEventListener('submit', function (e) {
 			e.preventDefault();
+			showSignInError('');
 			var select = document.getElementById('role-select');
 			var user = RM.UserRepository.findById(select.value);
 			if (user) {
@@ -61,7 +74,9 @@
 				} else {
 					window.location.href = 'case-creation.html';
 				}
+				return;
 			}
+			showSignInError(RM.I18n.t('signIn.userMissing'));
 		});
 	});
 })();
