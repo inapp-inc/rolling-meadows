@@ -6,7 +6,7 @@
 	var CM_ID = 'usr-case-manager';
 
 	RM.Seed = {
-		VERSION: 19,
+		VERSION: 21,
 
 		load: function () {
 			if (!this._repositoriesReady()) {
@@ -18,6 +18,7 @@
 			this._seedMarySmithData();
 			this._seedSeniorCaseload();
 			this._seedSpecialCases();
+			this._seedMultiProgramClient();
 			this._seedRegistrationOnlyClients();
 			this._seedDuplicateCandidates();
 			this._seedSampleDocuments();
@@ -52,8 +53,8 @@
 				return false;
 			}
 			return RM.UserRepository.findAll().length >= 4 &&
-				RM.ClientRepository.findAll().length >= 18 &&
-				RM.CaseRepository.findAll().length >= 10 &&
+				RM.ClientRepository.findAll().length >= 19 &&
+				RM.CaseRepository.findAll().length >= 13 &&
 				RM.RiskAssessmentRepository.findAll().length >= 10;
 		},
 
@@ -383,6 +384,93 @@
 			RM.ReferralRepository.save({
 				id: 'ref-flag-demo', clientId: 'cli-flag-demo', caseId: flagCase.id, source: 'Police',
 				reason: 'Welfare check', dateReceived: '2026-06-15', referredBy: 'Community referral partner'
+			});
+		},
+
+		_seedMultiProgramClient: function () {
+			RM.ClientRepository.save({
+				id: 'cli-multi-program',
+				name: 'Robert Chen',
+				dob: '1950-11-03',
+				phone: '(847) 555-0310',
+				address: '220 Oak Ave, Rolling Meadows, IL',
+				registeredAt: '2026-05-10',
+				registrationSource: 'referral'
+			});
+
+			RM.CaseRepository.save({
+				id: 'case-multi-senior',
+				clientId: 'cli-multi-program',
+				caseNumber: 'C-2026-098',
+				programId: PROGRAM_ID,
+				caseCategoryId: 'cat-senior-services',
+				caseSubcategoryId: 'sub-seniors-at-risk',
+				caseManagerId: CM_ID,
+				status: 'active',
+				openDate: '2026-05-10',
+				createdAt: '2026-05-10'
+			});
+
+			RM.CaseRepository.save({
+				id: 'case-multi-community',
+				clientId: 'cli-multi-program',
+				caseNumber: 'C-2026-097',
+				programId: 'prog-community-services',
+				caseCategoryId: 'cat-community-services',
+				caseSubcategoryId: 'sub-general-intake',
+				caseManagerId: 'usr-cross-program-liaison',
+				status: 'active',
+				openDate: '2026-06-01',
+				createdAt: '2026-06-01'
+			});
+
+			RM.ClientRepository.save({
+				id: 'cli-triple-program',
+				name: 'Diana Morrison',
+				dob: '1968-07-19',
+				phone: '(847) 555-0311',
+				address: '88 Meadowbrook Dr, Rolling Meadows, IL',
+				registeredAt: '2026-04-05',
+				registrationSource: 'referral'
+			});
+
+			RM.CaseRepository.save({
+				id: 'case-triple-senior',
+				clientId: 'cli-triple-program',
+				caseNumber: 'C-2026-096',
+				programId: PROGRAM_ID,
+				caseCategoryId: 'cat-senior-services',
+				caseSubcategoryId: 'sub-in-home-support',
+				caseManagerId: CM_ID,
+				status: 'active',
+				openDate: '2026-04-05',
+				createdAt: '2026-04-05'
+			});
+
+			RM.CaseRepository.save({
+				id: 'case-triple-community',
+				clientId: 'cli-triple-program',
+				caseNumber: 'C-2026-095',
+				programId: 'prog-community-services',
+				caseCategoryId: 'cat-community-services',
+				caseSubcategoryId: 'sub-housing-assistance',
+				caseManagerId: CM_ID,
+				status: 'active',
+				openDate: '2026-04-12',
+				createdAt: '2026-04-12'
+			});
+
+			RM.CaseRepository.save({
+				id: 'case-triple-mental-health',
+				clientId: 'cli-triple-program',
+				caseNumber: 'C-2026-094',
+				programId: 'prog-mental-health',
+				caseCategoryId: 'cat-mental-health',
+				caseSubcategoryId: 'sub-crisis-response',
+				caseManagerId: CM_ID,
+				status: 'active',
+				openDate: '2026-04-20',
+				createdAt: '2026-04-20'
 			});
 		},
 

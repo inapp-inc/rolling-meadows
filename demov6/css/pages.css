@@ -322,6 +322,14 @@
 	color: var(--color-neutral-700);
 }
 
+.program-chart .risk-chart-row {
+	grid-template-columns: minmax(140px, 220px) 1fr 48px;
+}
+.program-chart .risk-chart-label {
+	font-size: 0.8125rem;
+	line-height: 1.3;
+}
+
 /* Drill-down panel */
 .drilldown-panel {
 	margin-top: 1rem;

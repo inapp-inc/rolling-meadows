@@ -824,6 +824,39 @@
 			this.exportCanvasAsPng(canvas, filename);
 		},
 
+		exportProgramDistributionBarChartPng: function (report, total, title, filename) {
+			var width = 760;
+			var rowHeight = 44;
+			var height = 56 + report.length * rowHeight;
+			var canvas = document.createElement('canvas');
+			canvas.width = width * 2;
+			canvas.height = height * 2;
+			var ctx = canvas.getContext('2d');
+			ctx.scale(2, 2);
+			ctx.fillStyle = '#ffffff';
+			ctx.fillRect(0, 0, width, height);
+			ctx.fillStyle = '#1a3a5c';
+			ctx.font = '700 16px Arial';
+			ctx.fillText(title || t('pages.reports.clientsByProgram'), 24, 28);
+			report.forEach(function (r, index) {
+				var y = 40 + index * rowHeight;
+				var pct = total ? (r.count / total) : 0;
+				ctx.fillStyle = '#1a3a5c';
+				ctx.font = '600 13px Arial';
+				ctx.fillText(r.programLabel, 24, y + 18);
+				ctx.fillStyle = '#e5e7eb';
+				ctx.fillRect(180, y, 500, 22);
+				if (r.count > 0) {
+					ctx.fillStyle = r.color || RM.ReportEngine.programChartColor(r.programId, index);
+					ctx.fillRect(180, y, Math.max(500 * pct, 4), 22);
+				}
+				ctx.fillStyle = '#374151';
+				ctx.font = '700 14px Arial';
+				ctx.fillText(String(r.count), 700, y + 18);
+			});
+			this.exportCanvasAsPng(canvas, filename);
+		},
+
 		exportDonutChartPng: function (report, total, filename) {
 			var colors = { High: '#ef4444', Medium: '#f59e0b', Moderate: '#d97706', Low: '#10b981', Unknown: '#94a3b8' };
 			var width = 520;

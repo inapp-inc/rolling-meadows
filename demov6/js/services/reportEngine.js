@@ -222,6 +222,240 @@
 						: (RM.I18n ? RM.I18n.intakeCompletenessLabel('complete') : 'Complete')
 				};
 			}).sort(function (a, b) { return a.clientName.localeCompare(b.clientName); });
+		},
+
+		REGISTERED_ONLY_PROGRAM_ID: '__registered_only__',
+
+		ALL_PROGRAM_IDS: [
+			'prog-senior-services',
+			'prog-community-services',
+			'prog-parenting-support',
+			'prog-mental-health'
+		],
+
+		PROGRAM_CHART_COLORS: {
+			'prog-senior-services': '#2563eb',
+			'prog-community-services': '#059669',
+			'prog-parenting-support': '#7c3aed',
+			'prog-mental-health': '#db2777',
+			'__registered_only__': '#94a3b8'
+		},
+
+		PROGRAM_CHART_FALLBACK_COLORS: ['#2563eb', '#059669', '#7c3aed', '#db2777', '#d97706', '#0891b2'],
+
+		programChartColor: function (programId, index) {
+			if (this.PROGRAM_CHART_COLORS[programId]) {
+				return this.PROGRAM_CHART_COLORS[programId];
+			}
+			var palette = this.PROGRAM_CHART_FALLBACK_COLORS;
+			return palette[(index || 0) % palette.length];
+		},
+
+		clientsByProgram: function (caseManagerId) {
+			var self = this;
+			var cases = RM.CaseService ? RM.CaseService.activeCases() : [];
+			if (caseManagerId) {
+				cases = cases.filter(function (caseRecord) {
+					return caseRecord.caseManagerId === caseManagerId;
+				});
+			}
+
+			var byProgram = {};
+			var clientsWithOpenCase = {};
+
+			cases.forEach(function (caseRecord) {
+				var programId = caseRecord.programId || 'unknown';
+				if (!byProgram[programId]) {
+					byProgram[programId] = {};
+				}
+				byProgram[programId][caseRecord.clientId] = true;
+				clientsWithOpenCase[caseRecord.clientId] = true;
+			});
+
+			var rows = this.ALL_PROGRAM_IDS.map(function (programId, index) {
+				var clientIds = Object.keys(byProgram[programId] || {});
+				return {
+					programId: programId,
+					programLabel: RM.I18n ? RM.I18n.programLabel(programId) : programId,
+					count: clientIds.length,
+					clientIds: clientIds,
+					color: self.programChartColor(programId, index)
+				};
+			});
+
+			Object.keys(byProgram).forEach(function (programId) {
+				if (self.ALL_PROGRAM_IDS.indexOf(programId) !== -1) { return; }
+				var clientIds = Object.keys(byProgram[programId]);
+				rows.push({
+					programId: programId,
+					programLabel: RM.I18n ? RM.I18n.programLabel(programId) : programId,
+					count: clientIds.length,
+					clientIds: clientIds,
+					color: self.programChartColor(programId, rows.length)
+				});
+			});
+
+			if (!caseManagerId) {
+				var registeredOnlyIds = RM.ClientRepository.findAll()
+					.filter(function (client) { return !clientsWithOpenCase[client.id]; })
+					.map(function (client) { return client.id; });
+				rows.push({
+					programId: self.REGISTERED_ONLY_PROGRAM_ID,
+					programLabel: RM.I18n
+						? RM.I18n.t('pages.reports.registeredOnlyProgram')
+						: 'Registration only (no open case)',
+					count: registeredOnlyIds.length,
+					clientIds: registeredOnlyIds,
+					color: self.programChartColor(self.REGISTERED_ONLY_PROGRAM_ID, rows.length)
+				});
+			}
+
+			return rows;
+		},
+
+		clientsByProgramGroups: function (caseManagerId) {
+			var groups = {};
+			this.clientsByProgram(caseManagerId).forEach(function (row) {
+				groups[row.programId] = row.clientIds.map(function (clientId) {
+					return RM.ClientRepository.findById(clientId);
+				}).filter(function (client) { return !!client; });
+			});
+			return groups;
+		},
+
+		clientsByProgramDetail: function (caseManagerId) {
+			var self = this;
+			var detail = [];
+			this.clientsByProgram(caseManagerId).forEach(function (row) {
+				row.clientIds.forEach(function (clientId) {
+					var client = RM.ClientRepository.findById(clientId);
+					if (!client) { return; }
+					var openCases = RM.CaseService ? RM.CaseService.openCasesForClient(clientId).length : 0;
+					detail.push({
+						clientId: clientId,
+						clientName: client.name,
+						dob: client.dob,
+						phone: client.phone,
+						program: row.programLabel,
+						openCases: openCases,
+						registeredAt: client.registeredAt || ''
+					});
+				});
+			});
+			return detail.sort(function (a, b) {
+				return a.program.localeCompare(b.program) || a.clientName.localeCompare(b.clientName);
+			});
+		},
+
+		MULTI_PROGRAM_BUCKETS: [
+			{ id: '1', labelKey: 'pages.reports.singleProgramBucket', color: '#94a3b8' },
+			{ id: '2', labelKey: 'pages.reports.twoProgramsBucket', color: '#2563eb' },
+			{ id: '3plus', labelKey: 'pages.reports.threePlusProgramsBucket', color: '#7c3aed' }
+		],
+
+		_activeCasesForReport: function (caseManagerId) {
+			var cases = RM.CaseService ? RM.CaseService.activeCases() : [];
+			if (caseManagerId) {
+				cases = cases.filter(function (caseRecord) {
+					return caseRecord.caseManagerId === caseManagerId;
+				});
+			}
+			return cases;
+		},
+
+		clientProgramCounts: function (caseManagerId) {
+			var byClient = {};
+			this._activeCasesForReport(caseManagerId).forEach(function (caseRecord) {
+				if (!byClient[caseRecord.clientId]) {
+					byClient[caseRecord.clientId] = {};
+				}
+				byClient[caseRecord.clientId][caseRecord.programId || 'unknown'] = true;
+			});
+
+			return Object.keys(byClient).map(function (clientId) {
+				var programIds = Object.keys(byClient[clientId]);
+				return {
+					clientId: clientId,
+					programIds: programIds,
+					programLabels: programIds.map(function (programId) {
+						return RM.I18n ? RM.I18n.programLabel(programId) : programId;
+					}).sort(),
+					programCount: programIds.length
+				};
+			});
+		},
+
+		multiProgramDistribution: function (caseManagerId) {
+			var counts = { '1': 0, '2': 0, '3plus': 0 };
+			this.clientProgramCounts(caseManagerId).forEach(function (entry) {
+				if (entry.programCount >= 3) {
+					counts['3plus'] += 1;
+				} else {
+					counts[String(entry.programCount)] = (counts[String(entry.programCount)] || 0) + 1;
+				}
+			});
+
+			return this.MULTI_PROGRAM_BUCKETS.map(function (bucket) {
+				return {
+					bucketId: bucket.id,
+					programLabel: RM.I18n ? RM.I18n.t(bucket.labelKey) : bucket.id,
+					count: counts[bucket.id] || 0,
+					color: bucket.color
+				};
+			});
+		},
+
+		multiProgramEnrollmentCount: function (caseManagerId) {
+			return this.clientProgramCounts(caseManagerId).filter(function (entry) {
+				return entry.programCount >= 2;
+			}).length;
+		},
+
+		multiProgramEnrollmentDetail: function (caseManagerId) {
+			return this.clientProgramDetailForBucket(caseManagerId, 'multi');
+		},
+
+		_clientProgramDetailRow: function (entry) {
+			var client = RM.ClientRepository.findById(entry.clientId);
+			if (!client) { return null; }
+			return {
+				clientId: entry.clientId,
+				clientName: client.name,
+				dob: client.dob,
+				phone: client.phone,
+				programCount: entry.programCount,
+				programs: entry.programLabels.join(' · '),
+				openCases: RM.CaseService ? RM.CaseService.openCasesForClient(entry.clientId).length : entry.programCount
+			};
+		},
+
+		clientProgramDetailForBucket: function (caseManagerId, bucketId) {
+			var self = this;
+			return this.clientProgramCounts(caseManagerId)
+				.filter(function (entry) {
+					if (!bucketId || bucketId === 'multi') { return entry.programCount >= 2; }
+					if (bucketId === '3plus') { return entry.programCount >= 3; }
+					if (bucketId === '2') { return entry.programCount === 2; }
+					return entry.programCount === 1;
+				})
+				.map(function (entry) { return self._clientProgramDetailRow(entry); })
+				.filter(function (row) { return !!row; })
+				.sort(function (a, b) {
+					return b.programCount - a.programCount || a.clientName.localeCompare(b.clientName);
+				});
+		},
+
+		multiProgramClientsForBucket: function (bucketId, caseManagerId) {
+			return this.clientProgramCounts(caseManagerId)
+				.filter(function (entry) {
+					if (bucketId === '3plus') { return entry.programCount >= 3; }
+					if (bucketId === '2') { return entry.programCount === 2; }
+					return entry.programCount === 1;
+				})
+				.map(function (entry) {
+					return RM.ClientRepository.findById(entry.clientId);
+				})
+				.filter(function (client) { return !!client; });
 		}
 	};
 })();

@@ -47,6 +47,228 @@
 		];
 	}
 
+	function programColumns() {
+		return [
+			{ key: 'clientName', label: t('pages.reports.client') },
+			{ key: 'dob', label: t('pages.reports.dob') },
+			{ key: 'phone', label: t('pages.reports.phone') },
+			{ key: 'program', label: t('pages.reports.program') },
+			{ key: 'openCases', label: t('pages.reports.openCases') },
+			{ key: 'registeredAt', label: t('pages.reports.registeredAt') }
+		];
+	}
+
+	function programReportCard(chartId, csvId) {
+		return '<div class="card"><div class="card-header"><h2>' + RM.Components.escapeHtml(t('pages.reports.clientsByProgram')) + '</h2>' +
+			RM.Components.downloadBar({ imageTarget: chartId, csvId: csvId }) +
+			'</div><p class="text-muted" style="margin:0 0 1rem">' + RM.Components.escapeHtml(t('pages.reports.clientsByProgramHint')) + '</p>' +
+			'<div id="' + chartId + '" class="risk-chart program-chart"></div></div>';
+	}
+
+	function renderProgramDistributionChart(containerId, rows, groups) {
+		var el = document.getElementById(containerId);
+		if (!el) { return; }
+		if (!rows.length) {
+			el.innerHTML = RM.Components.emptyState(t('pages.reports.noProgramData'), t('pages.reports.noProgramDataHint'));
+			return;
+		}
+		var total = rows.reduce(function (sum, row) { return sum + row.count; }, 0);
+		el.innerHTML = rows.map(function (row) {
+			var pct = total ? Math.round((row.count / total) * 100) : 0;
+			var fillWidth = row.count > 0 ? Math.max(pct, 1) : 0;
+			return '<div class="risk-chart-row program-chart-row" data-program-id="' + RM.Components.escapeHtml(row.programId) + '" role="button" tabindex="0" aria-label="' +
+				RM.Components.escapeHtml(t('pages.reports.programDrilldownAria', { count: row.count, program: row.programLabel })) + '">' +
+				'<div class="risk-chart-label">' + RM.Components.escapeHtml(row.programLabel) + '</div>' +
+				'<div class="risk-chart-track"><div class="risk-chart-fill" style="width:' + fillWidth + '%;background:' +
+				RM.Components.escapeHtml(row.color) + '"></div></div>' +
+				'<div class="risk-chart-count">' + row.count + '</div></div>';
+		}).join('');
+
+		el.querySelectorAll('.program-chart-row').forEach(function (row) {
+			function activate() {
+				var programId = row.getAttribute('data-program-id');
+				var programRow = rows.find(function (item) { return item.programId === programId; });
+				openProgramDrawer(programRow, groups[programId] || [], el);
+				el.querySelectorAll('.program-chart-row').forEach(function (item) { item.classList.remove('active'); });
+				row.classList.add('active');
+			}
+			row.addEventListener('click', activate);
+			row.addEventListener('keydown', function (e) {
+				if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); }
+			});
+		});
+	}
+
+	function openProgramDrawer(programRow, clients, chartEl) {
+		if (!programRow) { return; }
+		var title = clients.length === 1
+			? t('pages.reports.programDrawerTitle', { program: programRow.programLabel, count: clients.length })
+			: t('pages.reports.programDrawerTitlePlural', { program: programRow.programLabel, count: clients.length });
+		var table = chartEl;
+		RM.Components.openSideDrawer(title, RM.Components.clientChipList(clients), function () {
+			if (table) {
+				table.querySelectorAll('.program-chart-row').forEach(function (row) { row.classList.remove('active'); });
+			}
+		});
+	}
+
+	function multiProgramColumns() {
+		return [
+			{ key: 'clientName', label: t('pages.reports.client') },
+			{ key: 'dob', label: t('pages.reports.dob') },
+			{ key: 'phone', label: t('pages.reports.phone') },
+			{ key: 'programCount', label: t('pages.reports.programCount') },
+			{ key: 'programs', label: t('pages.reports.programs') },
+			{ key: 'openCases', label: t('pages.reports.openCases') }
+		];
+	}
+
+	function multiProgramReportCard(prefix) {
+		return '<div class="card"><div class="card-header"><h2>' + RM.Components.escapeHtml(t('pages.reports.multiProgramEnrollment')) + '</h2>' +
+			RM.Components.downloadBar({ imageTarget: prefix + '-multi-program-chart', csvId: prefix + '-multi-program' }) +
+			'</div><p class="text-muted" style="margin:0 0 0.75rem">' + RM.Components.escapeHtml(t('pages.reports.multiProgramEnrollmentHint')) + '</p>' +
+			'<p id="' + prefix + '-multi-program-summary" class="liaison-results-summary"></p>' +
+			'<div id="' + prefix + '-multi-program-chart" class="risk-chart program-chart"></div>' +
+			'<div id="' + prefix + '-multi-program-table"></div></div>';
+	}
+
+	function renderMultiProgramSummary(summaryId, count) {
+		var el = document.getElementById(summaryId);
+		if (!el) { return; }
+		el.innerHTML = count === 1
+			? t('pages.reports.multiProgramSummary', { count: count })
+			: t('pages.reports.multiProgramSummaryPlural', { count: count });
+	}
+
+	function renderBucketDistributionChart(containerId, rows, getClientsForBucket, ariaKey, options) {
+		options = options || {};
+		var el = document.getElementById(containerId);
+		if (!el) { return; }
+		var total = rows.reduce(function (sum, row) { return sum + row.count; }, 0);
+		el.innerHTML = rows.map(function (row) {
+			var pct = total ? Math.round((row.count / total) * 100) : 0;
+			var fillWidth = row.count > 0 ? Math.max(pct, 1) : 0;
+			return '<div class="risk-chart-row program-chart-row" data-bucket-id="' + RM.Components.escapeHtml(row.bucketId) + '" role="button" tabindex="0" aria-label="' +
+				RM.Components.escapeHtml(t(ariaKey, { count: row.count, program: row.programLabel })) + '">' +
+				'<div class="risk-chart-label">' + RM.Components.escapeHtml(row.programLabel) + '</div>' +
+				'<div class="risk-chart-track"><div class="risk-chart-fill" style="width:' + fillWidth + '%;background:' +
+				RM.Components.escapeHtml(row.color) + '"></div></div>' +
+				'<div class="risk-chart-count">' + row.count + '</div></div>';
+		}).join('');
+
+		el.querySelectorAll('.program-chart-row').forEach(function (row) {
+			function activate() {
+				var bucketId = row.getAttribute('data-bucket-id');
+				var bucketRow = rows.find(function (item) { return item.bucketId === bucketId; });
+				if (options.onBucketSelect) {
+					options.onBucketSelect(bucketId, bucketRow, row, el);
+					return;
+				}
+				openProgramDrawer(bucketRow, getClientsForBucket(bucketId), el);
+				el.querySelectorAll('.program-chart-row').forEach(function (item) { item.classList.remove('active'); });
+				row.classList.add('active');
+			}
+			row.addEventListener('click', activate);
+			row.addEventListener('keydown', function (e) {
+				if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); }
+			});
+		});
+	}
+
+	function multiProgramTableTitleKey(bucketId) {
+		if (bucketId === '1') { return 'pages.reports.singleProgramClientListTitle'; }
+		if (bucketId === '2') { return 'pages.reports.twoProgramClientListTitle'; }
+		if (bucketId === '3plus') { return 'pages.reports.threePlusProgramClientListTitle'; }
+		return 'pages.reports.multiProgramClientListTitle';
+	}
+
+	function updateMultiProgramTable(prefix, caseManagerId, bucketId) {
+		var rows = RM.ReportEngine.clientProgramDetailForBucket(caseManagerId, bucketId || 'multi');
+		var tableContainerId = prefix + '-multi-program-table';
+		document.getElementById(tableContainerId).innerHTML = renderMultiProgramTable(rows, multiProgramTableTitleKey(bucketId));
+		wireMultiProgramDrilldown(rows, tableContainerId);
+	}
+
+	function renderMultiProgramTable(rows, titleKey) {
+		titleKey = titleKey || 'pages.reports.multiProgramClientListTitle';
+		if (!rows.length) {
+			return RM.Components.emptyState(t('pages.reports.noClientsInBucket'), t('pages.reports.noClientsInBucketHint'));
+		}
+		return '<h3 class="form-section-title" style="font-size:0.9375rem;margin:1rem 0 0.75rem">' +
+			RM.Components.escapeHtml(t(titleKey)) + '</h3>' +
+			'<table class="data-table data-table-interactive"><thead><tr>' +
+			'<th>' + RM.Components.escapeHtml(t('pages.reports.client')) + '</th>' +
+			'<th>' + RM.Components.escapeHtml(t('pages.reports.programCount')) + '</th>' +
+			'<th>' + RM.Components.escapeHtml(t('pages.reports.programs')) + '</th>' +
+			'<th>' + RM.Components.escapeHtml(t('pages.reports.openCases')) + '</th>' +
+			'</tr></thead><tbody>' +
+			rows.map(function (row) {
+				return '<tr class="multi-program-row" data-client-id="' + RM.Components.escapeHtml(row.clientId) + '" role="button" tabindex="0" aria-label="' +
+					RM.Components.escapeHtml(t('pages.reports.multiProgramRowAria', { name: row.clientName, count: row.programCount })) + '">' +
+					'<td>' + RM.Components.escapeHtml(row.clientName) + '</td>' +
+					'<td><strong>' + RM.Components.escapeHtml(row.programCount) + '</strong></td>' +
+					'<td>' + RM.Components.escapeHtml(row.programs) + '</td>' +
+					'<td>' + RM.Components.escapeHtml(row.openCases) + '</td></tr>';
+			}).join('') + '</tbody></table>';
+	}
+
+	function wireMultiProgramDrilldown(rows, tableContainerId) {
+		var table = document.querySelector('#' + tableContainerId + ' .data-table-interactive');
+		if (!table) { return; }
+		var byClientId = {};
+		rows.forEach(function (row) { byClientId[row.clientId] = row; });
+
+		RM.Components.wireInteractiveTable(table, '.multi-program-row', function (row) {
+			openMultiProgramDrawer(byClientId[row.getAttribute('data-client-id')], table);
+		});
+	}
+
+	function openMultiProgramDrawer(row, table) {
+		if (!row) { return; }
+		var client = RM.ClientRepository.findById(row.clientId);
+		if (!client) { return; }
+		RM.Components.openClientCasesDrawer(client, table, '.multi-program-row');
+	}
+
+	function mountMultiProgramReport(prefix, caseManagerId) {
+		var distribution = RM.ReportEngine.multiProgramDistribution(caseManagerId);
+		var multiCount = RM.ReportEngine.multiProgramEnrollmentCount(caseManagerId);
+		var distributionTotal = distribution.reduce(function (sum, row) { return sum + row.count; }, 0);
+		var activeBucketId = null;
+
+		renderMultiProgramSummary(prefix + '-multi-program-summary', multiCount);
+		renderBucketDistributionChart(
+			prefix + '-multi-program-chart',
+			distribution,
+			null,
+			'pages.reports.multiProgramBucketAria',
+			{
+				onBucketSelect: function (bucketId, bucketRow, chartRow, chartEl) {
+					if (activeBucketId === bucketId) {
+						activeBucketId = null;
+						chartEl.querySelectorAll('.program-chart-row').forEach(function (item) {
+							item.classList.remove('active');
+						});
+						updateMultiProgramTable(prefix, caseManagerId, null);
+						return;
+					}
+					activeBucketId = bucketId;
+					chartEl.querySelectorAll('.program-chart-row').forEach(function (item) {
+						item.classList.toggle('active', item === chartRow);
+					});
+					updateMultiProgramTable(prefix, caseManagerId, bucketId);
+				}
+			}
+		);
+		updateMultiProgramTable(prefix, caseManagerId, null);
+
+		return {
+			distribution: distribution,
+			distributionTotal: distributionTotal,
+			detail: RM.ReportEngine.multiProgramEnrollmentDetail(caseManagerId)
+		};
+	}
+
 	document.addEventListener('DOMContentLoaded', function () {
 		var isAuditor = RM.Session.getCurrentUser() && RM.Permissions.isAuditor();
 		RM.Boot.init({
@@ -81,6 +303,9 @@
 		var riskData = RM.ReportEngine.caseloadByRisk();
 		var overdueSummary = RM.ReportEngine.overdueSummary();
 		var cboSummary = RM.ReportEngine.cboReferralSummary();
+		var programData = RM.ReportEngine.clientsByProgram(null);
+		var programGroups = RM.ReportEngine.clientsByProgramGroups(null);
+		var programTotal = programData.reduce(function (sum, row) { return sum + row.count; }, 0);
 
 		main.innerHTML =
 			RM.Components.modulePageHeader('audit-reports') +
@@ -90,6 +315,8 @@
 			RM.Components.statCard(snapshot.overdueFollowUps, t('pages.reports.overdueFollowUpsStat'), 'clock', 'accent', null) +
 			RM.Components.statCard(snapshot.openCboReferrals, t('pages.reports.openCboStat'), 'link', 'success', null) +
 			'</div>' +
+			programReportCard('auditor-report-program', 'auditor-report-program') +
+			multiProgramReportCard('auditor') +
 			'<div class="card"><div class="card-header"><h2>' + RM.Components.escapeHtml(t('pages.reports.caseloadByRisk')) + '</h2>' +
 			RM.Components.downloadBar({ imageTarget: 'auditor-report-risk', csvId: 'auditor-report-risk' }) +
 			'</div><div id="auditor-report-risk"></div></div>' +
@@ -108,6 +335,8 @@
 			'</div><div id="auditor-report-cbo"></div></div>';
 
 		document.getElementById('auditor-report-risk').innerHTML = renderRiskTable(riskData);
+		renderProgramDistributionChart('auditor-report-program', programData, programGroups);
+		var auditorMultiProgram = mountMultiProgramReport('auditor', null);
 
 		function refreshAuditorEnrollment() {
 			var eventId = document.getElementById('auditor-report-event').value;
@@ -125,6 +354,22 @@
 
 		RM.Components.wireDownloadActions(main, {
 			images: {
+				'auditor-report-program': function () {
+					RM.Components.exportProgramDistributionBarChartPng(
+						programData,
+						programTotal,
+						t('pages.reports.clientsByProgram'),
+						'audit-people-by-program.png'
+					);
+				},
+				'auditor-multi-program-chart': function () {
+					RM.Components.exportProgramDistributionBarChartPng(
+						auditorMultiProgram.distribution,
+						auditorMultiProgram.distributionTotal,
+						t('pages.reports.multiProgramEnrollment'),
+						'audit-multi-program-enrollment.png'
+					);
+				},
 				'auditor-report-risk': function () {
 					var total = riskData.reduce(function (sum, row) { return sum + row.count; }, 0);
 					RM.Components.exportRiskBarChartPng(riskData, total, 'audit-caseload-by-risk.png');
@@ -177,6 +422,22 @@
 				}
 			},
 			csv: {
+				'auditor-report-program': function () {
+					RM.Components.exportXlsx(
+						'audit-people-by-program-detail.xlsx',
+						RM.ReportEngine.clientsByProgramDetail(null),
+						programColumns(),
+						{ title: t('pages.reports.auditProgramDetail'), sheetName: t('pages.reports.sheetProgram') }
+					);
+				},
+				'auditor-multi-program': function () {
+					RM.Components.exportXlsx(
+						'audit-multi-program-enrollment-detail.xlsx',
+						RM.ReportEngine.multiProgramEnrollmentDetail(null),
+						multiProgramColumns(),
+						{ title: t('pages.reports.auditMultiProgramDetail'), sheetName: t('pages.reports.sheetMultiProgram') }
+					);
+				},
 				'auditor-report-risk': function () {
 					RM.Components.exportXlsx(
 						'audit-caseload-by-risk-detail.xlsx',
@@ -267,9 +528,15 @@
 		var user = RM.Session.getCurrentUser();
 		var events = RM.ReportEngine.localizedEvents();
 		var riskGroups = RM.Data.groupByRisk(RM.Data.activeClients());
+		var programManagerId = user.role === 'case_manager' ? user.id : null;
+		var programData = RM.ReportEngine.clientsByProgram(programManagerId);
+		var programGroups = RM.ReportEngine.clientsByProgramGroups(programManagerId);
+		var programTotal = programData.reduce(function (sum, row) { return sum + row.count; }, 0);
 
 		main.innerHTML =
 			RM.Components.modulePageHeader('reports') +
+			programReportCard('report-program', 'report-program') +
+			multiProgramReportCard('report') +
 			'<div class="card"><div class="card-header"><h2>' + RM.Components.escapeHtml(t('pages.reports.caseloadByRisk')) + '</h2>' +
 			RM.Components.downloadBar({ imageTarget: 'report-risk', csvId: 'report-risk' }) +
 			'</div><div id="report-risk"></div></div>' +
@@ -288,6 +555,8 @@
 			'</div><div id="report-cbo"></div></div>';
 
 		var riskData = RM.ReportEngine.caseloadByRisk();
+		renderProgramDistributionChart('report-program', programData, programGroups);
+		var reportMultiProgram = mountMultiProgramReport('report', programManagerId);
 		document.getElementById('report-risk').innerHTML = renderRiskTable(riskData);
 		wireRiskDrilldown(riskGroups);
 
@@ -317,6 +586,22 @@
 
 		RM.Components.wireDownloadActions(main, {
 			images: {
+				'report-program': function () {
+					RM.Components.exportProgramDistributionBarChartPng(
+						programData,
+						programTotal,
+						t('pages.reports.clientsByProgram'),
+						'people-by-program.png'
+					);
+				},
+				'report-multi-program-chart': function () {
+					RM.Components.exportProgramDistributionBarChartPng(
+						reportMultiProgram.distribution,
+						reportMultiProgram.distributionTotal,
+						t('pages.reports.multiProgramEnrollment'),
+						'multi-program-enrollment.png'
+					);
+				},
 				'report-risk': function () {
 					var total = riskData.reduce(function (sum, row) { return sum + row.count; }, 0);
 					RM.Components.exportRiskBarChartPng(riskData, total, 'caseload-by-risk.png');
@@ -351,6 +636,22 @@
 				}
 			},
 			csv: {
+				'report-program': function () {
+					RM.Components.exportXlsx(
+						'people-by-program-detail.xlsx',
+						RM.ReportEngine.clientsByProgramDetail(programManagerId),
+						programColumns(),
+						{ title: t('pages.reports.programDetail'), sheetName: t('pages.reports.sheetProgram') }
+					);
+				},
+				'report-multi-program': function () {
+					RM.Components.exportXlsx(
+						'multi-program-enrollment-detail.xlsx',
+						RM.ReportEngine.multiProgramEnrollmentDetail(programManagerId),
+						multiProgramColumns(),
+						{ title: t('pages.reports.multiProgramDetail'), sheetName: t('pages.reports.sheetMultiProgram') }
+					);
+				},
 				'report-risk': function () {
 					RM.Components.exportXlsx(
 						'caseload-by-risk-detail.xlsx',
