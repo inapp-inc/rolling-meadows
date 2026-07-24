@@ -24,6 +24,23 @@
 		});
 	});
 
+	function caseloadClients(user) {
+		return RM.Data.caseloadForUser(user).filter(function (c) {
+			return c.status === 'active' || c.status === 'open' || c.status === 'closed';
+		});
+	}
+
+	function matchesQuery(view, q) {
+		if (!q) { return true; }
+		var haystack = [
+			view.name,
+			view.phone,
+			view.address,
+			view.caseNumber
+		].join(' ').toLowerCase();
+		return haystack.indexOf(q) !== -1;
+	}
+
 	function renderPage(user) {
 		var main = document.getElementById('page-content');
 		var categories = RM.CaseCategories.localizedCategories();
@@ -60,23 +77,13 @@
 				}).join('');
 		}
 
-		function caseloadClients() {
-			return RM.Data.caseloadForUser(user).filter(function (c) {
-				return c.status === 'active' || c.status === 'open' || c.status === 'closed';
-			});
-		}
-
 		function filterCases() {
 			var q = searchInput.value.trim().toLowerCase();
 			var catFilter = categoryEl.value;
 			var subFilter = subcategoryEl.value;
-			var clients = caseloadClients();
-
-			if (q) {
-				clients = RM.ClientRepository.search(q).filter(function (c) {
-					return caseloadClients().some(function (x) { return x.id === c.id; });
-				});
-			}
+			var clients = caseloadClients(user).filter(function (c) {
+				return matchesQuery(c, q);
+			});
 
 			if (catFilter) {
 				clients = clients.filter(function (c) { return c.caseCategoryId === catFilter; });
@@ -103,7 +110,8 @@
 				var cm = RM.UserRepository.findById(c.caseManagerId);
 				var caseType = RM.CaseCategories.subcategoryLabel(c.caseSubcategoryId) ||
 					RM.CaseCategories.categoryLabel(c.caseCategoryId);
-				return '<tr class="case-search-row" data-client-id="' + RM.Components.escapeHtml(c.id) + '" role="button" tabindex="0">' +
+				return '<tr class="case-search-row" data-client-id="' + RM.Components.escapeHtml(c.id) +
+					'" data-case-id="' + RM.Components.escapeHtml(c.caseId || '') + '" role="button" tabindex="0">' +
 					'<td class="col-client"><strong title="' + RM.Components.escapeHtml(c.name) + '">' +
 					RM.Components.escapeHtml(c.name) + '</strong></td>' +
 					'<td class="col-type"><span class="case-type-chip" title="' + RM.Components.escapeHtml(caseType) + '">' +
@@ -117,7 +125,7 @@
 					'<td class="col-opened">' + RM.Components.formatDate(c.createdAt) + '</td>' +
 					'<td class="col-status">' + RM.Components.escapeHtml(RM.I18n.clientStatusLabel(c.status)) + '</td>' +
 					'<td class="col-action">' +
-					'<a href="' + RM.Links.page('case-workspace', { clientId: c.id }) + '" class="btn btn-sm btn-primary" onclick="event.stopPropagation()">' + RM.Components.escapeHtml(t('pages.caseSearch.open')) + '</a>' +
+					'<a href="' + RM.Links.page('case-workspace', { clientId: c.id, caseId: c.caseId }) + '" class="btn btn-sm btn-primary" onclick="event.stopPropagation()">' + RM.Components.escapeHtml(t('pages.caseSearch.open')) + '</a>' +
 					'</td></tr>';
 			}).join('');
 
@@ -136,9 +144,11 @@
 
 			var table = el.querySelector('.data-table-interactive');
 			RM.Components.wireInteractiveTable(table, '.case-search-row', function (row) {
-				var client = RM.ClientRepository.findById(row.getAttribute('data-client-id'));
-				if (client) {
-					RM.Components.openCaseDrawer(client, table, '.case-search-row');
+				var caseId = row.getAttribute('data-case-id');
+				var clientId = row.getAttribute('data-client-id');
+				var view = caseId ? RM.CaseService.view(caseId) : RM.CaseService.resolveView(clientId, null);
+				if (view) {
+					RM.Components.openCaseDrawer(view, table, '.case-search-row');
 				}
 			});
 		}

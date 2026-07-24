@@ -34,14 +34,12 @@
 			'<input type="search" id="search-input" placeholder="' + RM.Components.escapeHtml(t('pages.clientSearch.searchPlaceholder')) + '" aria-label="' + RM.Components.escapeHtml(t('pages.clientSearch.searchLabel')) + '">' +
 			'<button type="button" id="btn-search" class="btn btn-primary">' + RM.Components.escapeHtml(t('pages.clientSearch.searchButton')) + '</button>' +
 			'</div>' +
-			'<div id="live-dedup"></div>' +
 			'<div id="cross-program-alert"></div>' +
 			'<div id="search-results"></div>';
 
 		function doSearch() {
 			var q = document.getElementById('search-input').value.trim();
 			var results = q ? RM.ClientRepository.search(q) : RM.Data.registeredClients();
-			renderLiveDedup(q);
 			renderResults(results, canDetail, user, q);
 		}
 
@@ -63,35 +61,54 @@
 		doSearch();
 	}
 
-	function renderLiveDedup(query) {
-		var el = document.getElementById('live-dedup');
-		if (!el) { return; }
-		if (!query || query.length < 2) {
-			el.innerHTML = '';
-			return;
-		}
-		var partial = { name: query, phone: query, dob: '' };
-		var matches = RM.DeduplicationService.check(partial, null);
-		if (!matches.length) {
-			el.innerHTML = '';
-			return;
-		}
-		el.innerHTML = RM.Components.renderDedupMatches(matches, { linkClient: true });
-		el.querySelectorAll('.dedup-open-link').forEach(function (link) {
-			link.addEventListener('click', function (ev) {
-				ev.preventDefault();
-				var clientId = link.getAttribute('data-client-id');
-				var client = RM.ClientRepository.findById(clientId);
-				if (client) { openClientDrawer(client); }
-			});
-		});
+	function normalizeSearchText(text) {
+		return (text || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 	}
 
-	function matchBadgeForClient(client, query) {
-		if (!query) { return ''; }
-		var matches = RM.ClientRepository.findDuplicates({ name: query, phone: query, dob: '' });
-		var match = matches.find(function (m) { return m.client.id === client.id; });
-		return match ? RM.Components.matchConfidenceBadge(match.score) : '';
+	function searchMatchFields(client, query) {
+		if (!query) { return []; }
+		var q = normalizeSearchText(query);
+		var phoneQ = RM.DeduplicationService.normalizePhone(query);
+		var fields = [];
+
+		if (q && normalizeSearchText(client.name).indexOf(q) !== -1) {
+			fields.push('name');
+		}
+		if (phoneQ && RM.DeduplicationService.normalizePhone(client.phone).indexOf(phoneQ) !== -1) {
+			fields.push('phone');
+		}
+		if (q && normalizeSearchText(client.address).indexOf(q) !== -1) {
+			fields.push('address');
+		}
+		return fields;
+	}
+
+	function searchMatchBadge(client, query) {
+		var fields = searchMatchFields(client, query);
+		if (!fields.length) { return '—'; }
+		var labels = {
+			name: t('pages.clientSearch.matchName'),
+			phone: t('pages.clientSearch.matchPhone'),
+			address: t('pages.clientSearch.matchAddress')
+		};
+		return fields.map(function (field) {
+			return labels[field] || field;
+		}).join(', ');
+	}
+
+	function duplicatePairsBanner(clients) {
+		var pairs = RM.DeduplicationService.pairsAmong(clients);
+		if (!pairs.length) { return ''; }
+
+		var items = pairs.map(function (pair) {
+			return '<li><strong>' + RM.Components.escapeHtml(pair.client.name) + '</strong> · ' +
+				RM.Components.escapeHtml(pair.other.name) + '</li>';
+		}).join('');
+
+		return RM.Components.alertHtml('warning',
+			'<strong>' + RM.Components.escapeHtml(t('pages.clientSearch.duplicatePairsTitle')) + '</strong>' +
+			'<p class="text-muted">' + RM.Components.escapeHtml(t('pages.clientSearch.duplicatePairsHint')) + '</p>' +
+			'<ul class="dedup-match-list">' + items + '</ul>');
 	}
 
 	function caseCountLabel(client) {
@@ -137,13 +154,15 @@
 			return;
 		}
 
+		alertEl.innerHTML = duplicatePairsBanner(clients);
+
 		var rows = clients.map(function (c) {
-			var dup = RM.DeduplicationService.check({ name: c.name, phone: c.phone }, c.id);
+			var dup = RM.DeduplicationService.check({ name: c.name, phone: c.phone, dob: c.dob }, c.id);
 			var dupFlag = dup.length ? ' <span title="' + RM.Components.escapeHtml(t('pages.clientSearch.hasDuplicates')) + '">⚠</span>' : '';
 			return '<tr class="client-search-row" data-client-id="' + RM.Components.escapeHtml(c.id) + '" role="button" tabindex="0" aria-label="' +
 				RM.Components.escapeHtml(t('pages.clientSearch.viewClientAria', { name: c.name })) + '">' +
 				'<td>' + RM.Components.escapeHtml(c.name) + dupFlag + '</td>' +
-				'<td>' + matchBadgeForClient(c, query) + '</td>' +
+				'<td>' + RM.Components.escapeHtml(searchMatchBadge(c, query)) + '</td>' +
 				'<td>' + RM.Components.escapeHtml(c.phone) + '</td>' +
 				'<td>' + RM.Components.escapeHtml(c.address) + '</td>' +
 				'<td>' + RM.Components.formatDate(c.registeredAt) + '</td>' +

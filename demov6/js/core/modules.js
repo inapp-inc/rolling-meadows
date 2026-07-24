@@ -14,6 +14,12 @@
 
 	var MODULES = [
 		{
+			id: 'analytics',
+			labelKey: 'module.analytics',
+			shortLabelKey: 'module.analyticsShort',
+			roles: ['case_manager', 'supervisor', 'auditor']
+		},
+		{
 			id: 'cases',
 			labelKey: 'module.cases',
 			shortLabelKey: 'module.casesShort',
@@ -32,22 +38,16 @@
 			roles: ['case_manager', 'supervisor']
 		},
 		{
-			id: 'workflow',
-			labelKey: 'module.workflow',
-			shortLabelKey: 'module.workflowShort',
-			roles: ['case_manager', 'supervisor']
-		},
-		{
 			id: 'services',
 			labelKey: 'module.services',
 			shortLabelKey: 'module.servicesShort',
 			roles: ['case_manager', 'supervisor']
 		},
 		{
-			id: 'analytics',
-			labelKey: 'module.analytics',
-			shortLabelKey: 'module.analyticsShort',
-			roles: ['case_manager', 'supervisor', 'auditor']
+			id: 'workflow',
+			labelKey: 'module.workflow',
+			shortLabelKey: 'module.workflowShort',
+			roles: ['case_manager', 'supervisor']
 		}
 	];
 
@@ -209,7 +209,9 @@
 
 		navItemsForModule: function (moduleId, user) {
 			if (!user) { return []; }
-			return navItemsForModule(moduleId, user.role).map(localizeItem);
+			return navItemsForModule(moduleId, user.role).map(localizeItem).sort(function (a, b) {
+				return (a.label || '').localeCompare(b.label || '');
+			});
 		},
 
 		resolveNavHref: resolveNavHref,

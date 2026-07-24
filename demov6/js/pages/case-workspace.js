@@ -129,7 +129,7 @@
 				'<p class="workspace-workflow-meta" id="workspace-workflow-meta">' + RM.Components.escapeHtml(workflow.name) + '</p>' +
 				'<div class="workspace-badges" id="workspace-badges">' + buildWorkspaceBadges(client, assessment, closure) + '</div></div>' +
 				'<div class="workspace-actions">' +
-				'<a href="' + RM.Links.page('client-profile', { clientId: client.id }) + '" class="btn btn-secondary btn-sm">' + RM.Components.escapeHtml(t('workspace.view360')) + '</a>' +
+				'<a href="' + RM.Links.page('client-profile', { clientId: client.id, caseId: client.caseId }) + '" class="btn btn-secondary btn-sm">' + RM.Components.escapeHtml(t('workspace.view360')) + '</a>' +
 				'<a href="' + RM.Links.page('case-search') + '" class="btn btn-secondary btn-sm">' + RM.Components.escapeHtml(t('workspace.backToCaseSearch')) + '</a>' +
 				'</div></div>' +
 				'<div id="workspace-stepper"></div>' +

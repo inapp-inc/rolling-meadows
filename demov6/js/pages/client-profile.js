@@ -2,6 +2,8 @@
 (function () {
 	'use strict';
 
+	var state = { clientId: null, caseId: null };
+
 	function t(key, params) {
 		return RM.I18n.t(key, params);
 	}
@@ -24,18 +26,84 @@
 					window.location.href = 'client-search.html';
 					return;
 				}
-				var client = RM.ClientRepository.findById(clientId);
-				if (!client) {
+				var person = RM.ClientRepository.findById(clientId);
+				if (!person) {
 					document.getElementById('page-content').innerHTML = RM.Components.alert('danger', t('workspace.clientNotFound'));
 					return;
 				}
-				renderProfile(client);
+				state.clientId = clientId;
+				state.caseId = RM.Navigation.getQueryParam('caseId') || RM.Session.getActiveCaseId();
+				var view = RM.CaseService.resolveView(clientId, state.caseId);
+				if (view && view.caseId) {
+					state.caseId = view.caseId;
+					RM.Session.setActiveCaseId(view.caseId);
+				}
+				renderProfile(view || person);
 			}
 		});
 	});
 
 	function esc(text) {
 		return RM.Components.escapeHtml(text);
+	}
+
+	function listForView(repo, view) {
+		if (view.caseId && repo.findByCaseId) {
+			var byCase = repo.findByCaseId(view.caseId);
+			return Array.isArray(byCase) ? byCase : (byCase ? [byCase] : []);
+		}
+		var byClient = repo.findByClientId(view.id);
+		return Array.isArray(byClient) ? byClient : (byClient ? [byClient] : []);
+	}
+
+	function intakeForView(view) {
+		if (view.caseId) {
+			return RM.IntakeRepository.findByCaseId(view.caseId);
+		}
+		return RM.IntakeRepository.findByClientId(view.id);
+	}
+
+	function closureForView(view) {
+		if (view.caseId) {
+			return RM.CaseClosureRepository.findByCaseId(view.caseId);
+		}
+		return RM.CaseClosureRepository.findByClientId(view.id);
+	}
+
+	function caseSwitcherHtml(view) {
+		var cases = RM.CaseService.casesForClient(view.id);
+		if (cases.length <= 1) {
+			if (cases.length === 1 && cases[0].caseNumber) {
+				return '<p class="profile-meta">' + esc(t('pages.clientProfile.caseLabel')) + ' ' +
+					esc(cases[0].caseNumber) + '</p>';
+			}
+			return '';
+		}
+		var options = cases.map(function (caseRecord) {
+			var label = (caseRecord.caseNumber || caseRecord.id) + ' — ' +
+				RM.CaseCategories.categoryLabel(caseRecord.caseCategoryId);
+			var selected = caseRecord.id === view.caseId ? ' selected' : '';
+			return '<option value="' + esc(caseRecord.id) + '"' + selected + '>' + esc(label) + '</option>';
+		}).join('');
+		return '<div class="profile-case-switch form-group">' +
+			'<label for="profile-case-select">' + esc(t('pages.clientProfile.caseLabel')) + '</label>' +
+			'<select id="profile-case-select" aria-label="' + esc(t('pages.clientProfile.caseSwitchAria')) + '">' +
+			options + '</select></div>';
+	}
+
+	function wireCaseSwitcher() {
+		var select = document.getElementById('profile-case-select');
+		if (!select) { return; }
+		select.addEventListener('change', function () {
+			state.caseId = select.value;
+			RM.Session.setActiveCaseId(state.caseId);
+			var url = RM.Links.page('client-profile', { clientId: state.clientId, caseId: state.caseId });
+			if (RM.Navigate) {
+				RM.Navigate.go(url);
+			} else {
+				window.location.href = url;
+			}
+		});
 	}
 
 	function sectionWrap(section, client, bodyHtml, options) {
@@ -47,8 +115,8 @@
 
 	function renderProfile(client) {
 		var main = document.getElementById('page-content');
-		var assessment = RM.RiskAssessmentRepository.findLatest(client.id);
-		var closure = RM.CaseClosureRepository.findByClientId(client.id);
+		var assessment = RM.RiskAssessmentRepository.findLatest(client);
+		var closure = closureForView(client);
 		var readOnly = RM.Permissions.isReadOnly() || client.status === 'closed' || !!closure;
 		var cfg = RM.CaseForm.configForClient(client);
 		var profile = RM.CaseForm.profileSections(client);
@@ -58,6 +126,9 @@
 				return '<li>' + esc(f) + '</li>';
 			}).join('') + '</ul>'
 			: '';
+		var workspaceHref = client.caseId
+			? RM.Links.page('case-workspace', { clientId: client.id, caseId: client.caseId })
+			: RM.Links.page('case-creation', { clientId: client.id });
 
 		main.innerHTML =
 			RM.Components.pageHeader(t('pages.clientProfile.title'), { moduleId: 'cases', lead: client.name }) +
@@ -67,31 +138,40 @@
 			'<div><p class="profile-name">' + esc(client.name) + '</p>' +
 			'<p class="profile-meta">' + esc(t('pages.clientProfile.dobPrefix')) + ' ' + RM.Components.formatDate(client.dob) + ' · ' + esc(client.phone) + '</p>' +
 			'<p class="profile-meta">' + esc(client.address) + '</p>' +
-			'<p class="profile-meta profile-workflow">' + RM.Components.workflowStageBadge(client) + '</p></div></div>' +
+			caseSwitcherHtml(client) +
+			(client.caseId ? '<p class="profile-meta profile-workflow">' + RM.Components.workflowStageBadge(client) + '</p>' : '') +
+			'</div></div>' +
 			'<div class="profile-actions">' +
 			(assessment ? RM.Components.riskBadge(assessment.overallRisk) : '') +
 			(closure ? RM.Components.alert('info', t('components.caseClosedReadOnlyShort')) : '') +
-			'<a href="' + RM.Links.page('case-workspace', { clientId: client.id }) + '" class="btn btn-primary">' + esc(t('pages.clientProfile.openCaseWorkspace')) + '</a></div></div>' +
-			'<div class="profile-workflow-banner card">' +
-			'<p class="profile-workflow-name">' + esc(workflow.name) + '</p>' +
-			'<p class="profile-workflow-meta">' + esc(RM.CaseCategories.categoryLabel(client.caseCategoryId)) +
-			' · ' + esc(RM.CaseCategories.subcategoryLabel(client.caseSubcategoryId)) + '</p>' +
-			(workflow.description ? '<p class="profile-workflow-desc">' + esc(workflow.description) + '</p>' : '') +
-			(focusHtml ? '<div class="profile-workflow-focus-wrap"><strong>' + esc(t('pages.clientProfile.focusAreas')) + '</strong>' + focusHtml + '</div>' : '') +
-			'</div>' +
+			(client.caseId ? '<a href="' + workspaceHref + '" class="btn btn-primary">' + esc(t('pages.clientProfile.openCaseWorkspace')) + '</a>' : '') +
+			'</div></div>' +
+			(client.caseId ?
+				'<div class="profile-workflow-banner card">' +
+				'<p class="profile-workflow-name">' + esc(workflow.name) + '</p>' +
+				'<p class="profile-workflow-meta">' + esc(RM.CaseCategories.categoryLabel(client.caseCategoryId)) +
+				' · ' + esc(RM.CaseCategories.subcategoryLabel(client.caseSubcategoryId)) + '</p>' +
+				(workflow.description ? '<p class="profile-workflow-desc">' + esc(workflow.description) + '</p>' : '') +
+				(focusHtml ? '<div class="profile-workflow-focus-wrap"><strong>' + esc(t('pages.clientProfile.focusAreas')) + '</strong>' + focusHtml + '</div>' : '') +
+				'</div>' : '') +
 			'<div class="profile-360">' +
-			renderIntakeSection(client, cfg, findSection(profile.sections, 'intake')) +
-			renderAssessmentSection(client, cfg, findSection(profile.sections, 'assessment')) +
-			renderRiskSection(client, findSection(profile.sections, 'risk')) +
-			renderCarePlanSection(client, cfg, findSection(profile.sections, 'careplan')) +
-			renderServicesSection(client, cfg, findSection(profile.sections, 'services')) +
-			renderFollowupSection(client, cfg, findSection(profile.sections, 'followup')) +
-			renderReassessmentSection(client, findSection(profile.sections, 'reassessment')) +
-			renderClosureSection(client, cfg, findSection(profile.sections, 'closure'), closure) +
-			renderDocumentsSection(client, findSection(profile.sections, 'documents'), readOnly) +
+			(client.caseId ?
+				renderIntakeSection(client, cfg, findSection(profile.sections, 'intake')) +
+				renderAssessmentSection(client, cfg, findSection(profile.sections, 'assessment')) +
+				renderRiskSection(client, findSection(profile.sections, 'risk')) +
+				renderCarePlanSection(client, cfg, findSection(profile.sections, 'careplan')) +
+				renderServicesSection(client, cfg, findSection(profile.sections, 'services')) +
+				renderFollowupSection(client, cfg, findSection(profile.sections, 'followup')) +
+				renderReassessmentSection(client, findSection(profile.sections, 'reassessment')) +
+				renderClosureSection(client, cfg, findSection(profile.sections, 'closure'), closure) +
+				renderDocumentsSection(client, findSection(profile.sections, 'documents'), readOnly)
+				: RM.Components.emptyState(t('pages.clientProfile.noOpenCases'), t('pages.clientProfile.noOpenCasesHint'))) +
 			'</div>';
 
-		wireDocumentUpload(client.id, readOnly);
+		wireCaseSwitcher();
+		if (client.caseId) {
+			wireDocumentUpload(client.id, readOnly);
+		}
 	}
 
 	function findSection(sections, tabId) {
@@ -104,8 +184,8 @@
 	}
 
 	function renderIntakeSection(client, cfg, section) {
-		var refs = RM.ReferralRepository.findByClientId(client.id);
-		var intake = RM.IntakeRepository.findByClientId(client.id);
+		var refs = listForView(RM.ReferralRepository, client);
+		var intake = intakeForView(client);
 		var body = '';
 
 		if (refs.length) {
@@ -138,7 +218,7 @@
 	}
 
 	function renderAssessmentSection(client, cfg, section) {
-		var intake = RM.IntakeRepository.findByClientId(client.id);
+		var intake = intakeForView(client);
 		var body = intake && intake.comprehensiveAssessmentNotes
 			? '<div class="profile-subblock">' +
 				'<p><strong>' + esc(cfg.assessmentSummaryBackgroundLabel) + ':</strong> ' +
@@ -151,7 +231,7 @@
 	}
 
 	function renderRiskSection(client, section) {
-		var list = RM.RiskAssessmentRepository.findByClientId(client.id);
+		var list = listForView(RM.RiskAssessmentRepository, client);
 		var body = list.length
 			? list.map(function (a) {
 				return '<div class="profile-subblock">' +
@@ -166,7 +246,7 @@
 	}
 
 	function renderCarePlanSection(client, cfg, section) {
-		var items = RM.CarePlanRepository.findByClientId(client.id);
+		var items = listForView(RM.CarePlanRepository, client);
 		var body = items.length
 			? '<table class="data-table"><thead><tr><th>' + esc(cfg.carePlanIssueLabel) +
 				'</th><th>' + esc(cfg.carePlanGoalLabel) + '</th><th>' + esc(cfg.carePlanServiceLabel) +
@@ -181,8 +261,8 @@
 	}
 
 	function renderServicesSection(client, cfg, section) {
-		var enr = RM.ServiceEnrollmentRepository.findByClientId(client.id);
-		var cbos = RM.CBOReferralRepository.findByClientId(client.id);
+		var enr = listForView(RM.ServiceEnrollmentRepository, client);
+		var cbos = listForView(RM.CBOReferralRepository, client);
 		var body = '';
 
 		if (enr.length) {
@@ -205,7 +285,7 @@
 	}
 
 	function renderFollowupSection(client, cfg, section) {
-		var notes = RM.CaseNoteRepository.findByClientId(client.id);
+		var notes = listForView(RM.CaseNoteRepository, client);
 		var body = notes.length
 			? notes.map(function (n) {
 				return '<div class="note-entry"><div class="note-meta">' + RM.Components.formatDate(n.date) +
@@ -217,7 +297,7 @@
 	}
 
 	function renderReassessmentSection(client, section) {
-		var list = RM.ReassessmentRepository.findByClientId(client.id);
+		var list = listForView(RM.ReassessmentRepository, client);
 		var body = list.length
 			? list.map(function (r) {
 				return '<div class="profile-subblock"><p class="profile-inline-meta">' +

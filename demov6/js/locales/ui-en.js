@@ -581,6 +581,11 @@
 				viewClientAria: 'View client record for {name}',
 				tableName: 'Name',
 				tableMatch: 'Match',
+				matchName: 'Name',
+				matchPhone: 'Phone',
+				matchAddress: 'Address',
+				duplicatePairsTitle: 'Possible duplicate records in these results',
+				duplicatePairsHint: 'These clients appear to be the same person entered more than once. Review in Duplicate Detection before opening a new case.',
 				tableCategory: 'Category',
 				tableProcessStage: 'Process stage',
 				tablePhone: 'Phone',
@@ -657,7 +662,11 @@
 				previous: 'Previous',
 				current: 'Current',
 				overall: 'Overall',
-				composite: 'Composite'
+				composite: 'Composite',
+				caseLabel: 'Case:',
+				caseSwitchAria: 'Switch active case',
+				noOpenCases: 'No open cases for this client',
+				noOpenCasesHint: 'Register a case from client search or case creation to view episode details here.'
 			},
 			documentsHub: {
 				noActiveCases: 'No active cases',

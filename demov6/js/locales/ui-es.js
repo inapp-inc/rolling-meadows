@@ -581,6 +581,11 @@
 				viewClientAria: 'Ver registro del cliente {name}',
 				tableName: 'Nombre',
 				tableMatch: 'Coincidencia',
+				matchName: 'Nombre',
+				matchPhone: 'Teléfono',
+				matchAddress: 'Dirección',
+				duplicatePairsTitle: 'Posibles registros duplicados en estos resultados',
+				duplicatePairsHint: 'Estos clientes parecen ser la misma persona registrada más de una vez. Revise en Detección de duplicados antes de abrir un nuevo caso.',
 				tableCategory: 'Categoría',
 				tableProcessStage: 'Etapa del proceso',
 				tablePhone: 'Teléfono',
@@ -657,7 +662,11 @@
 				previous: 'Anterior',
 				current: 'Actual',
 				overall: 'General',
-				composite: 'Compuesta'
+				composite: 'Compuesta',
+				caseLabel: 'Caso:',
+				caseSwitchAria: 'Cambiar caso activo',
+				noOpenCases: 'No hay casos abiertos para este cliente',
+				noOpenCasesHint: 'Registre un caso desde búsqueda de clientes o creación de casos para ver los detalles del episodio aquí.'
 			},
 			documentsHub: {
 				noActiveCases: 'Sin casos activos',

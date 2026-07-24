@@ -1099,7 +1099,9 @@
 			var workflow = RM.CaseWorkflow.forClient(client);
 			var statuses = RM.Workflow.getAllStageStatuses(client);
 			var current = RM.Workflow.getStatus(client);
-			var referral = RM.ReferralRepository.findByClientId(client.id)[0];
+			var referral = client.caseId
+				? (RM.ReferralRepository.findByCaseId(client.caseId)[0] || null)
+				: RM.ReferralRepository.findByClientId(client.id)[0];
 			var cm = RM.UserRepository.findById(client.caseManagerId);
 			var focusHtml = workflow.focusAreas.length
 				? '<ul class="case-focus-list">' + workflow.focusAreas.map(function (f) {
@@ -1140,7 +1142,7 @@
 				'<div class="drawer-actions">' +
 				'<a href="' + RM.Links.page('case-workspace', { clientId: client.id, caseId: client.caseId }) + '" class="btn btn-primary">' +
 				t('components.openCaseWorkspaceLower') + '</a>' +
-				'<a href="' + RM.Links.page('client-profile', { clientId: client.id }) + '" class="btn btn-secondary">' +
+				'<a href="' + RM.Links.page('client-profile', { clientId: client.id, caseId: client.caseId }) + '" class="btn btn-secondary">' +
 				t('components.view360Lower') + '</a>' +
 				'</div></div>';
 		},

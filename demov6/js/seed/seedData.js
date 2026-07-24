@@ -6,7 +6,7 @@
 	var CM_ID = 'usr-case-manager';
 
 	RM.Seed = {
-		VERSION: 21,
+		VERSION: 22,
 
 		load: function () {
 			if (!this._repositoriesReady()) {
@@ -166,6 +166,51 @@
 				bundle.reassessments.forEach(function (r, i) {
 					RM.ReassessmentRepository.save(Object.assign({}, link, r, {
 						id: r.id || ('re-' + person.id + '-' + (i + 1))
+					}));
+				});
+			}
+		},
+
+		_seedCaseBundle: function (clientId, caseId, bundle) {
+			var link = { clientId: clientId, caseId: caseId };
+
+			if (bundle.referral) {
+				RM.ReferralRepository.save(Object.assign({}, link, bundle.referral));
+			}
+			if (bundle.intake) {
+				RM.IntakeRepository.save(Object.assign({}, link, bundle.intake));
+			}
+			if (bundle.assessment) {
+				RM.RiskAssessmentRepository.save(Object.assign({}, link, { assessorId: CM_ID }, bundle.assessment));
+			}
+			if (bundle.carePlans) {
+				bundle.carePlans.forEach(function (cp, i) {
+					RM.CarePlanRepository.save(Object.assign({}, link, { voided: false }, cp, {
+						id: cp.id || ('cp-' + caseId + '-' + (i + 1))
+					}));
+				});
+			}
+			if (bundle.enrollments) {
+				bundle.enrollments.forEach(function (e, i) {
+					RM.ServiceEnrollmentRepository.save(Object.assign({}, link, {
+						voided: false, enrolledBy: CM_ID, status: 'active'
+					}, e, { id: e.id || ('enr-' + caseId + '-' + (i + 1)) }));
+				});
+			}
+			if (bundle.cbo) {
+				RM.CBOReferralRepository.save(Object.assign({}, link, bundle.cbo));
+			}
+			if (bundle.notes) {
+				bundle.notes.forEach(function (n, i) {
+					RM.CaseNoteRepository.save(Object.assign({}, link, {
+						authorId: CM_ID, voided: false
+					}, n, { id: n.id || ('note-' + caseId + '-' + (i + 1)) }));
+				});
+			}
+			if (bundle.reassessments) {
+				bundle.reassessments.forEach(function (r, i) {
+					RM.ReassessmentRepository.save(Object.assign({}, link, r, {
+						id: r.id || ('re-' + caseId + '-' + (i + 1))
 					}));
 				});
 			}
@@ -377,6 +422,7 @@
 				caseSubcategoryId: 'sub-general-intake',
 				caseManagerId: 'usr-cross-program-liaison',
 				status: 'active',
+				currentStage: 3,
 				openDate: '2026-06-01',
 				createdAt: '2026-06-01'
 			});
@@ -384,6 +430,31 @@
 			RM.ReferralRepository.save({
 				id: 'ref-flag-demo', clientId: 'cli-flag-demo', caseId: flagCase.id, source: 'Police',
 				reason: 'Welfare check', dateReceived: '2026-06-15', referredBy: 'Community referral partner'
+			});
+
+			this._seedCaseBundle('cli-flag-demo', flagCase.id, {
+				intake: {
+					id: 'int-flag-demo',
+					livingArrangement: 'Lives alone in apartment',
+					medicalHistory: 'Diabetes, mild cognitive impairment',
+					consentOnFile: true,
+					completeness: 'complete',
+					comprehensiveAssessmentNotes: 'Cross-program intake completed — community services assessment documented.',
+					intakeQuestions: {
+						livesWith: 'Alone',
+						mealPrep: 'Uses delivered meals twice weekly',
+						transportation: 'Paratransit for medical appointments',
+						medication: 'Self-managed with weekly pill box setup'
+					}
+				},
+				assessment: {
+					id: 'ra-flag-demo',
+					date: '2026-06-18',
+					ratings: { safety: 'Medium', housing: 'Medium', nutrition: 'Low', isolation: 'High', medical: 'Medium' },
+					compositeScore: 55,
+					overallRisk: 'Medium'
+				},
+				notes: [{ date: '2026-06-25', type: 'phone call', text: 'Cross-program liaison confirmed welfare check follow-up.' }]
 			});
 		},
 
@@ -407,6 +478,7 @@
 				caseSubcategoryId: 'sub-seniors-at-risk',
 				caseManagerId: CM_ID,
 				status: 'active',
+				currentStage: 4,
 				openDate: '2026-05-10',
 				createdAt: '2026-05-10'
 			});
@@ -420,8 +492,63 @@
 				caseSubcategoryId: 'sub-general-intake',
 				caseManagerId: 'usr-cross-program-liaison',
 				status: 'active',
+				currentStage: 3,
 				openDate: '2026-06-01',
 				createdAt: '2026-06-01'
+			});
+
+			this._seedCaseBundle('cli-multi-program', 'case-multi-senior', {
+				referral: {
+					id: 'ref-multi-senior', source: 'Hospital', reason: 'Falls',
+					dateReceived: '2026-05-10', referredBy: 'Advocate Lutheran General Hospital'
+				},
+				intake: {
+					id: 'int-multi-senior', livingArrangement: 'Lives with spouse',
+					medicalHistory: 'Osteoarthritis, recent fall in bathroom',
+					consentOnFile: true, completeness: 'complete',
+					comprehensiveAssessmentNotes: 'Senior services holistic review — fall prevention and meal support identified.',
+					intakeQuestions: {
+						livesWith: 'Spouse',
+						mealPrep: 'Spouse prepares most meals',
+						transportation: 'Spouse drives to appointments',
+						medication: 'Uses pill organizer'
+					}
+				},
+				assessment: {
+					id: 'ra-multi-senior', date: '2026-05-12',
+					ratings: { falls: 'High', nutrition: 'Medium', isolation: 'Low', housing: 'Low', abuseRisk: 'Low' },
+					compositeScore: 58, overallRisk: 'Medium'
+				},
+				carePlans: [{
+					issue: 'Fall prevention', goal: 'Reduce fall risk at home', service: 'Home safety assessment', status: 'In Progress'
+				}],
+				notes: [{ date: '2026-06-05', type: 'home visit', text: 'Grab bars installed in bathroom; follow-up in two weeks.' }]
+			});
+
+			this._seedCaseBundle('cli-multi-program', 'case-multi-community', {
+				referral: {
+					id: 'ref-multi-community', source: 'Self-referral', reason: 'Financial hardship / housing risk',
+					dateReceived: '2026-06-01', referredBy: 'Family resource center walk-in'
+				},
+				intake: {
+					id: 'int-multi-community', livingArrangement: 'Renting with spouse',
+					medicalHistory: 'Hypertension — stable on medication',
+					consentOnFile: true, completeness: 'complete',
+					comprehensiveAssessmentNotes: 'Community services intake — utility assistance and benefits screening completed.',
+					intakeQuestions: {
+						livesWith: 'Spouse',
+						mealPrep: 'Independent',
+						transportation: 'Own vehicle',
+						medication: 'Self-managed'
+					}
+				},
+				assessment: {
+					id: 'ra-multi-community', date: '2026-06-03',
+					ratings: { housing: 'Medium', finances: 'High', nutrition: 'Low', transportation: 'Low', safety: 'Low' },
+					compositeScore: 49, overallRisk: 'Medium'
+				},
+				enrollments: [{ serviceOrEventId: 'evt-safety', dateEnrolled: '2026-06-08' }],
+				notes: [{ date: '2026-06-12', type: 'phone call', text: 'LIHEAP application submitted; awaiting determination.' }]
 			});
 
 			RM.ClientRepository.save({
@@ -443,6 +570,7 @@
 				caseSubcategoryId: 'sub-in-home-support',
 				caseManagerId: CM_ID,
 				status: 'active',
+				currentStage: 5,
 				openDate: '2026-04-05',
 				createdAt: '2026-04-05'
 			});
@@ -456,6 +584,7 @@
 				caseSubcategoryId: 'sub-housing-assistance',
 				caseManagerId: CM_ID,
 				status: 'active',
+				currentStage: 4,
 				openDate: '2026-04-12',
 				createdAt: '2026-04-12'
 			});
@@ -469,8 +598,91 @@
 				caseSubcategoryId: 'sub-crisis-response',
 				caseManagerId: CM_ID,
 				status: 'active',
+				currentStage: 3,
 				openDate: '2026-04-20',
 				createdAt: '2026-04-20'
+			});
+
+			this._seedCaseBundle('cli-triple-program', 'case-triple-senior', {
+				referral: {
+					id: 'ref-triple-senior', source: 'Physician', reason: 'Self-neglect',
+					dateReceived: '2026-04-05', referredBy: 'Primary care — home safety concern'
+				},
+				intake: {
+					id: 'int-triple-senior', livingArrangement: 'Lives alone',
+					medicalHistory: 'COPD, limited mobility',
+					consentOnFile: true, completeness: 'complete',
+					comprehensiveAssessmentNotes: 'In-home support assessment — ADL assistance and meal delivery recommended.',
+					intakeQuestions: {
+						livesWith: 'Alone',
+						mealPrep: 'Skips meals frequently',
+						transportation: 'No longer drives',
+						medication: 'Misses doses without reminders'
+					}
+				},
+				assessment: {
+					id: 'ra-triple-senior', date: '2026-04-08',
+					ratings: { falls: 'Medium', nutrition: 'High', isolation: 'High', housing: 'Medium', abuseRisk: 'Low' },
+					compositeScore: 64, overallRisk: 'High'
+				},
+				carePlans: [{
+					issue: 'Nutrition', goal: 'Ensure daily meals', service: 'Meals on Wheels', status: 'In Progress'
+				}],
+				enrollments: [{ serviceOrEventId: 'evt-holiday', dateEnrolled: '2026-05-01' }],
+				notes: [{ date: '2026-05-15', type: 'home visit', text: 'Meal delivery started; client receptive to in-home aide visit.' }]
+			});
+
+			this._seedCaseBundle('cli-triple-program', 'case-triple-community', {
+				referral: {
+					id: 'ref-triple-community', source: 'Neighbor', reason: 'Unsafe living conditions',
+					dateReceived: '2026-04-12', referredBy: 'Neighbor welfare concern'
+				},
+				intake: {
+					id: 'int-triple-community', livingArrangement: 'Renting single-bedroom apartment',
+					medicalHistory: 'Depression — untreated until recent PCP visit',
+					consentOnFile: true, completeness: 'complete',
+					comprehensiveAssessmentNotes: 'Housing assistance intake — arrears and habitability issues documented.',
+					intakeQuestions: {
+						livesWith: 'Alone',
+						mealPrep: 'Limited budget',
+						transportation: 'Public transit',
+						medication: 'Recently restarted antidepressant'
+					}
+				},
+				assessment: {
+					id: 'ra-triple-community', date: '2026-04-14',
+					ratings: { housing: 'High', finances: 'High', nutrition: 'Medium', transportation: 'Medium', safety: 'Medium' },
+					compositeScore: 71, overallRisk: 'High'
+				},
+				carePlans: [{
+					issue: 'Housing stability', goal: 'Prevent eviction', service: 'Emergency rental assistance', status: 'In Progress'
+				}],
+				notes: [{ date: '2026-05-01', type: 'virtual meeting', text: 'Landlord payment plan negotiated; case manager monitoring compliance.' }]
+			});
+
+			this._seedCaseBundle('cli-triple-program', 'case-triple-mental-health', {
+				referral: {
+					id: 'ref-triple-mh', source: 'Crisis hotline', reason: 'Acute mental health crisis',
+					dateReceived: '2026-04-20', referredBy: '988 crisis line warm transfer'
+				},
+				intake: {
+					id: 'int-triple-mh', livingArrangement: 'Lives alone',
+					medicalHistory: 'Major depression, prior hospitalization',
+					consentOnFile: true, completeness: 'complete',
+					comprehensiveAssessmentNotes: 'Crisis stabilization intake — safety plan co-developed with client.',
+					intakeQuestions: {
+						livesWith: 'Alone',
+						mealPrep: 'Irregular when symptomatic',
+						transportation: 'Uses paratransit',
+						medication: 'Psychiatric meds — needs adherence support'
+					}
+				},
+				assessment: {
+					id: 'ra-triple-mh', date: '2026-04-20',
+					ratings: { suicideRisk: 'Medium', selfHarm: 'Low', substanceUse: 'Low', safetyPlan: 'High', supportSystem: 'Low' },
+					compositeScore: 60, overallRisk: 'Medium'
+				},
+				notes: [{ date: '2026-04-22', type: 'phone call', text: 'Weekly therapy referral sent; safety plan reviewed with client.' }]
 			});
 		},
 
