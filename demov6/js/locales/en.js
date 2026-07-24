@@ -64,7 +64,9 @@
 			subtitle: 'Select your role to continue',
 			roleLabel: 'Your role',
 			continue: 'Continue',
-			welcomeAria: 'Welcome'
+			welcomeAria: 'Welcome',
+			seedError: 'Demo data failed to load. Refresh the page or contact your administrator.',
+			userMissing: 'Unable to sign in with the selected role. Refresh the page and try again.'
 		},
 		dashboard: {
 			programImpact: 'Program impact',

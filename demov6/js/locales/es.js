@@ -64,7 +64,9 @@
 			subtitle: 'Seleccione su rol para continuar',
 			roleLabel: 'Su rol',
 			continue: 'Continuar',
-			welcomeAria: 'Bienvenido'
+			welcomeAria: 'Bienvenido',
+			seedError: 'No se pudieron cargar los datos de demostración. Actualice la página o contacte al administrador.',
+			userMissing: 'No se pudo iniciar sesión con el rol seleccionado. Actualice la página e inténtelo de nuevo.'
 		},
 		dashboard: {
 			programImpact: 'Impacto del programa',
