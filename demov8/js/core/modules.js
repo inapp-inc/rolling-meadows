@@ -73,9 +73,18 @@
 			{ id: 'bulk-enroll', labelKey: 'nav.bulkEnroll', href: 'bulk-enrollment.html', roles: ['case_manager', 'supervisor'] }
 		],
 		analytics: [
-			{ id: 'reports', labelKey: 'nav.reports', href: 'reports.html', roles: ['case_manager', 'supervisor'] },
-			{ id: 'report-builder', labelKey: 'nav.reportBuilder', href: 'report-builder.html', roles: ['case_manager', 'supervisor'] },
-			{ id: 'audit-reports', labelKey: 'nav.auditReports', href: 'reports.html', roles: ['auditor'] }
+			{
+				id: 'standard-reports',
+				labelKey: 'nav.standardReports',
+				roles: ['case_manager', 'supervisor', 'auditor'],
+				children: [
+					{ id: 'reports-caseload', labelKey: 'nav.reportsCaseload', href: 'reports.html?tier=caseload', roles: ['case_manager', 'supervisor'] },
+					{ id: 'reports-executive', labelKey: 'nav.reportsExecutive', href: 'reports.html?tier=executive', roles: ['case_manager', 'supervisor'] },
+					{ id: 'reports-integrity', labelKey: 'nav.reportsIntegrity', href: 'reports.html?tier=integrity', roles: ['case_manager', 'supervisor', 'auditor'] },
+					{ id: 'reports-operational', labelKey: 'nav.reportsOperational', href: 'reports.html?tier=operational', roles: ['case_manager', 'supervisor'] }
+				]
+			},
+			{ id: 'custom-reports', labelKey: 'nav.customReports', href: 'custom-reports.html', roles: ['case_manager', 'supervisor'] }
 		]
 	};
 
@@ -95,6 +104,12 @@
 		'services-hub': 'services',
 		'bulk-enroll': 'services',
 		reports: 'analytics',
+		'standard-reports': 'analytics',
+		'reports-executive': 'analytics',
+		'reports-operational': 'analytics',
+		'reports-integrity': 'analytics',
+		'reports-caseload': 'analytics',
+		'custom-reports': 'analytics',
 		'report-builder': 'analytics',
 		'audit-reports': 'analytics'
 	};
@@ -114,6 +129,9 @@
 		if (copy.shortLabelKey) {
 			copy.shortLabel = translate(copy.shortLabelKey);
 		}
+		if (copy.children) {
+			copy.children = copy.children.map(localizeItem);
+		}
 		return copy;
 	}
 
@@ -131,6 +149,11 @@
 	Object.keys(NAV_BY_MODULE).forEach(function (moduleId) {
 		NAV_BY_MODULE[moduleId].forEach(function (item) {
 			NAV_ITEMS_FLAT[item.id] = Object.assign({ moduleId: moduleId }, item);
+			if (item.children) {
+				item.children.forEach(function (child) {
+					NAV_ITEMS_FLAT[child.id] = Object.assign({ moduleId: moduleId, parentId: item.id }, child);
+				});
+			}
 		});
 	});
 
@@ -166,6 +189,15 @@
 
 		return items.filter(function (item) {
 			return item.roles.indexOf(role) !== -1;
+		}).map(function (item) {
+			if (!item.children) { return item; }
+			var children = item.children.filter(function (child) {
+				return child.roles.indexOf(role) !== -1;
+			});
+			return Object.assign({}, item, { children: children });
+		}).filter(function (item) {
+			if (item.children) { return item.children.length > 0; }
+			return true;
 		});
 	}
 
@@ -211,9 +243,7 @@
 
 		navItemsForModule: function (moduleId, user) {
 			if (!user) { return []; }
-			return navItemsForModule(moduleId, user.role).map(localizeItem).sort(function (a, b) {
-				return (a.label || '').localeCompare(b.label || '');
-			});
+			return navItemsForModule(moduleId, user.role).map(localizeItem);
 		},
 
 		resolveNavHref: resolveNavHref,

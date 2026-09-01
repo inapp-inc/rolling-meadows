@@ -8,6 +8,9 @@
 
 	var CHART_COLORS = ['#2563eb', '#059669', '#7c3aed', '#db2777', '#d97706', '#0891b2', '#64748b', '#dc2626'];
 	var pageFilterValues = null;
+	var previewModalOpen = false;
+	var paletteDragOccurred = false;
+	var fieldContextMenu = null;
 
 	var state = {
 		id: null,
@@ -37,7 +40,7 @@
 	document.addEventListener('DOMContentLoaded', function () {
 		RM.Boot.init({
 			activeModule: 'analytics',
-			activeNav: 'report-builder',
+			activeNav: 'custom-reports',
 			onReady: function () {
 				if (RM.Permissions.isAuditor() || RM.Permissions.isLiaison()) {
 					window.location.href = 'reports.html';
@@ -45,33 +48,39 @@
 				}
 				var main = document.getElementById('page-content');
 				wireEvents(main);
-				if (!applyTemplateFromUrl() && !state.columns.length && state.reportType === 'table') {
+				var loadedFromTemplate = applyTemplateFromUrl();
+				var loadedFromList = !loadedFromTemplate && applyReportFromUrl();
+				if (!loadedFromTemplate && !loadedFromList && !state.columns.length && state.reportType === 'table') {
 					applyDefaultTableConfig();
 				}
 				renderPage();
+				if (loadedFromList) {
+					openPreviewModal();
+				} else if (getReportIdFromUrl()) {
+					RM.Components.showToast(t('pages.customReports.notFound'), 'warning');
+				}
 			}
 		});
 	});
 
 	function renderPage() {
 		RM.Components.closeSideDrawer();
+		closeFieldContextMenu();
 		var fieldSearchQuery = '';
 		var fieldSearchEl = document.getElementById('rb-field-search');
 		if (fieldSearchEl) { fieldSearchQuery = fieldSearchEl.value; }
 
 		var main = document.getElementById('page-content');
 		main.innerHTML =
-			RM.Components.modulePageHeader('report-builder') +
+			RM.Components.modulePageHeader('custom-reports', t('pages.reportBuilder.title')) +
 			'<div class="rb-shell">' +
 			renderToolbar() +
-			'<div class="rb-workspace">' +
+			'<div class="rb-workspace rb-workspace--single">' +
 			'<div class="rb-config-column">' +
 			(state.reportType === 'chart' ? renderChartConfig() : renderTableConfig()) +
-			'</div>' +
-			'<div class="rb-preview-column">' + renderPreviewCard() + '</div>' +
-			'</div></div>';
+			'</div></div></div>' +
+			renderPreviewFab();
 
-		populateSavedReports();
 		if (state.reportType === 'chart') {
 			wireDragAndDrop(main);
 		}
@@ -82,22 +91,6 @@
 				filterFieldPalette(fieldSearchQuery);
 			}
 		}
-		wirePreviewFilterBar(main);
-		runPreview();
-	}
-
-	function wirePreviewFilterBar(main) {
-		if (!RM.ReportRuntimeFilters) { return; }
-		var previewBar = main.querySelector('#rb-preview-filter-bar');
-		if (!previewBar) { return; }
-		RM.ReportRuntimeFilters.wire(previewBar, function (needsRebuild) {
-			pageFilterValues = RM.ReportRuntimeFilters.readValues(previewBar);
-			if (needsRebuild) {
-				renderPage();
-				return;
-			}
-			runPreview();
-		});
 	}
 
 	function isYAxisFilled() {
@@ -122,6 +115,15 @@
 		return renderToolbarIconBtn('rb-export', exportIcon, exportLabelKey, exportHintKey, 'rb-toolbar-icon-btn--combo');
 	}
 
+	function renderPreviewFab() {
+		return '<button type="button" id="rb-preview-fab" class="rb-preview-fab" aria-label="' +
+			RM.Components.escapeHtml(t('pages.reportBuilder.run')) + '" title="' +
+			RM.Components.escapeHtml(t('pages.reportBuilder.runHint')) + '">' +
+			RM.Components.icon('play') +
+			'<span class="rb-preview-fab-label">' + RM.Components.escapeHtml(t('pages.reportBuilder.preview')) + '</span>' +
+			'</button>';
+	}
+
 	function renderToolbar() {
 		return '<div class="report-builder-toolbar card">' +
 			'<div class="report-builder-toolbar-fields">' +
@@ -130,14 +132,10 @@
 			'<input type="text" id="rb-name" value="' + RM.Components.escapeHtml(state.name) + '" placeholder="' +
 			RM.Components.escapeHtml(t('pages.reportBuilder.reportNamePlaceholder')) + '">' +
 			renderTypeToggle(false) +
-			'</div>' +
-			'<div class="form-group">' +
-			'<label for="rb-saved">' + RM.Components.escapeHtml(t('pages.reportBuilder.savedReports')) + '</label>' +
-			'<div class="rb-saved-row">' +
-			'<select id="rb-saved"><option value="">' + RM.Components.escapeHtml(t('pages.reportBuilder.newReport')) + '</option></select>' +
-			renderToolbarIconBtn('rb-new', RM.Components.icon('plus'), 'pages.reportBuilder.newReportBtn', 'pages.reportBuilder.newReportBtnHint') +
-			'</div></div></div>' +
+			'</div></div>' +
 			'<div class="report-builder-toolbar-actions">' +
+			'<a href="custom-reports.html" class="btn btn-secondary btn-sm rb-back-link">' +
+			RM.Components.escapeHtml(t('pages.reportBuilder.backToList')) + '</a>' +
 			renderToolbarIconBtn('rb-save', RM.Components.icon('save'), 'pages.reportBuilder.save', 'pages.reportBuilder.saveHint') +
 			'</div></div>';
 	}
@@ -242,17 +240,60 @@
 		});
 	}
 
-	function renderPreviewCard() {
-		return '<section class="card rb-preview-card">' +
-			'<div class="card-header rb-preview-header">' +
-			'<div class="rb-preview-header-main">' +
-			'<h2>' + RM.Components.escapeHtml(t('pages.reportBuilder.preview')) + '</h2>' +
-			'<span class="rb-preview-live">' + RM.Components.escapeHtml(t('pages.reportBuilder.previewLive')) + '</span>' +
-			'<span id="rb-preview-meta" class="report-builder-row-count"></span></div>' +
+	function renderPreviewModalBody() {
+		return renderPreviewFilterBar() +
+			'<div class="rb-preview-modal-head">' +
+			'<span id="rb-preview-meta" class="report-builder-row-count"></span>' +
 			renderPreviewExportBtn() +
 			'</div>' +
-			renderPreviewFilterBar() +
-			'<div id="rb-preview" class="rb-preview-body"></div></section>';
+			'<div id="rb-preview" class="rb-preview-body"></div>';
+	}
+
+	function wirePreviewFilterBar(root) {
+		if (!RM.ReportRuntimeFilters || !root) { return; }
+		var previewBar = root.querySelector('#rb-preview-filter-bar');
+		if (!previewBar) { return; }
+		RM.ReportRuntimeFilters.wire(previewBar, function (needsRebuild) {
+			pageFilterValues = RM.ReportRuntimeFilters.readValues(previewBar);
+			if (needsRebuild) {
+				openPreviewModal(true);
+				return;
+			}
+			runPreview();
+		});
+	}
+
+	function openPreviewModal(skipOpen) {
+		readFormState();
+		readFiltersFromDom();
+		if (!skipOpen) {
+			RM.Components.openModal(
+				t('pages.reportBuilder.preview'),
+				renderPreviewModalBody(),
+				function () { previewModalOpen = false; },
+				{ wide: true, modalClass: 'rb-preview-modal' }
+			);
+			previewModalOpen = true;
+			var modal = RM.Components._activeModal;
+			if (modal && modal.overlay) {
+				wirePreviewFilterBar(modal.overlay);
+				var exportBtn = modal.overlay.querySelector('#rb-export');
+				if (exportBtn) {
+					exportBtn.addEventListener('click', function () { exportReport(); });
+				}
+			}
+		} else if (RM.Components._activeModal && RM.Components._activeModal.overlay) {
+			var body = RM.Components._activeModal.overlay.querySelector('.modal-body');
+			if (body) {
+				body.innerHTML = renderPreviewModalBody();
+				wirePreviewFilterBar(RM.Components._activeModal.overlay);
+				var exportBtnRefresh = RM.Components._activeModal.overlay.querySelector('#rb-export');
+				if (exportBtnRefresh) {
+					exportBtnRefresh.addEventListener('click', function () { exportReport(); });
+				}
+			}
+		}
+		runPreview();
 	}
 
 	function renderStaticFiltersBlock() {
@@ -429,7 +470,7 @@
 			var searchText = (RM.ReportDataModel.label(ref.entity) + ' ' + ref.label).toLowerCase();
 			return '<button type="button" class="rb-drag-field" draggable="true" data-field-key="' + ref.key +
 				'" data-field-role="' + ref.role + '" data-search="' + RM.Components.escapeHtml(searchText) +
-				'" title="' + RM.Components.escapeHtml(t('pages.reportBuilder.clickOrDrag')) + '">' +
+				'" title="' + RM.Components.escapeHtml(t('pages.reportBuilder.clickForMenu')) + '">' +
 				'<span class="rb-drag-handle" aria-hidden="true">⠿</span>' +
 				'<span class="rb-drag-label">' + RM.Components.escapeHtml(ref.label) + '</span></button>';
 		}
@@ -464,7 +505,7 @@
 			'<button type="button" class="rb-drag-field rb-drag-field-special" draggable="true" data-field-key="__count__" data-field-role="measure" data-search="' +
 			RM.Components.escapeHtml(t('pages.reportBuilder.recordCount').toLowerCase()) +
 			'" title="' +
-			RM.Components.escapeHtml(t('pages.reportBuilder.clickOrDrag')) + '">' +
+			RM.Components.escapeHtml(t('pages.reportBuilder.clickForMenu')) + '">' +
 			'<span class="rb-drag-handle" aria-hidden="true">⠿</span>' +
 			'<span class="rb-drag-label">' + RM.Components.escapeHtml(t('pages.reportBuilder.recordCount')) + '</span></button>' +
 			relatedHtml + measureHtml +
@@ -692,12 +733,26 @@
 		return match ? decodeURIComponent(match[1]) : null;
 	}
 
+	function getReportIdFromUrl() {
+		var match = /[?&]id=([^&]+)/.exec(window.location.search);
+		return match ? decodeURIComponent(match[1]) : null;
+	}
+
 	function applyTemplateFromUrl() {
 		var templateId = getTemplateFromUrl();
 		if (!templateId || !RM.ReportCatalog) { return false; }
 		var item = RM.ReportCatalog.findById(templateId);
 		if (!item) { return false; }
 		applyCatalogItem(item);
+		return true;
+	}
+
+	function applyReportFromUrl() {
+		var reportId = getReportIdFromUrl();
+		if (!reportId) { return false; }
+		var saved = RM.CustomReportRepository.findById(reportId);
+		if (!saved) { return false; }
+		applyConfig(saved);
 		return true;
 	}
 
@@ -713,7 +768,6 @@
 			applyDefaultTableConfig();
 		}
 		renderPage();
-		runPreview();
 	}
 
 	function applyFieldToAxis(axis, fieldKey, role) {
@@ -787,7 +841,7 @@
 				return;
 			}
 		}
-		runPreview();
+		if (previewModalOpen) { runPreview(); }
 	}
 
 	function currentConfig() {
@@ -855,10 +909,12 @@
 		if (state.reportType === 'chart') {
 			state.lastChartResult = RM.ReportBuilderEngine.runChart(preview.config, user, preview.runtimeValues);
 			renderChartPreview(container, state.lastChartResult);
-			if (metaEl && state.lastChartResult.points) {
+			if (metaEl && state.lastChartResult) {
+				var rowCount = state.lastChartResult.meta ? state.lastChartResult.meta.rowCount : 0;
+				var groupCount = state.lastChartResult.points ? state.lastChartResult.points.length : 0;
 				metaEl.textContent = t('pages.reportBuilder.chartMetaWithGrain', {
-					groups: state.lastChartResult.points.length,
-					rows: state.lastChartResult.meta ? state.lastChartResult.meta.rowCount : 0,
+					groups: groupCount,
+					rows: rowCount,
 					grain: grainLabel
 				});
 			}
@@ -896,10 +952,28 @@
 
 	function renderChartPreview(container, result) {
 		if (!container) { return; }
-		if (!result || result.error === 'missing_x' || !result.points || !result.points.length) {
+		if (!result || result.error === 'missing_x') {
 			container.innerHTML = RM.Components.emptyState(
 				t('pages.reportBuilder.noChartPreview'),
 				t('pages.reportBuilder.noChartPreviewHint')
+			);
+			return;
+		}
+
+		var rowCount = result.meta ? result.meta.rowCount : 0;
+		if (!result.points || !result.points.length) {
+			container.innerHTML = RM.Components.emptyState(
+				t('pages.reportBuilder.noChartData'),
+				t('pages.reportBuilder.noChartDataHint', { rows: rowCount })
+			);
+			return;
+		}
+
+		var valueTotal = result.points.reduce(function (sum, point) { return sum + point.value; }, 0);
+		if (valueTotal === 0) {
+			container.innerHTML = RM.Components.emptyState(
+				t('pages.reportBuilder.noChartValues'),
+				t('pages.reportBuilder.noChartValuesHint', { groups: result.points.length })
 			);
 			return;
 		}
@@ -1046,7 +1120,6 @@
 		state.id = payload.id;
 		RM.Audit.record('customReport:' + payload.id, 'export_report', 'Saved custom report: ' + payload.name);
 		RM.Components.showToast(t('pages.reportBuilder.saved'), 'success');
-		populateSavedReports();
 	}
 
 	function exportReport() {
@@ -1111,6 +1184,7 @@
 	function wireDragAndDrop(root) {
 		root.querySelectorAll('.rb-drag-field').forEach(function (el) {
 			el.addEventListener('dragstart', function (e) {
+				paletteDragOccurred = true;
 				state.dragField = {
 					key: el.getAttribute('data-field-key'),
 					role: el.getAttribute('data-field-role')
@@ -1148,12 +1222,178 @@
 		});
 	}
 
+	function closeFieldContextMenu() {
+		if (fieldContextMenu) {
+			fieldContextMenu.remove();
+			fieldContextMenu = null;
+		}
+		document.removeEventListener('click', onFieldContextMenuOutside, true);
+		document.removeEventListener('keydown', onFieldContextMenuKeydown);
+	}
+
+	function onFieldContextMenuOutside(e) {
+		if (fieldContextMenu && !fieldContextMenu.contains(e.target)) {
+			closeFieldContextMenu();
+		}
+	}
+
+	function onFieldContextMenuKeydown(e) {
+		if (e.key === 'Escape') {
+			closeFieldContextMenu();
+		}
+	}
+
+	function canAssignFieldToX(fieldKey, role) {
+		return fieldKey !== '__count__' && role !== 'measure';
+	}
+
+	function canAssignFieldToY(fieldKey, role) {
+		return fieldKey === '__count__' || role === 'measure';
+	}
+
+	function openFieldContextMenu(fieldEl, event) {
+		closeFieldContextMenu();
+		var key = fieldEl.getAttribute('data-field-key');
+		var role = fieldEl.getAttribute('data-field-role');
+		var canAssignX = canAssignFieldToX(key, role);
+		var canAssignY = canAssignFieldToY(key, role);
+
+		var menu = document.createElement('div');
+		menu.className = 'rb-field-context-menu';
+		menu.setAttribute('role', 'menu');
+		menu.innerHTML =
+			'<button type="button" class="rb-field-context-item" role="menuitem" data-action="preview">' +
+			RM.Components.escapeHtml(t('pages.reportBuilder.fieldContextPreview')) + '</button>' +
+			'<button type="button" class="rb-field-context-item" role="menuitem" data-action="assign-x"' +
+			(canAssignX ? '' : ' disabled') + '>' +
+			RM.Components.escapeHtml(t('pages.reportBuilder.fieldContextAssignX')) + '</button>' +
+			'<button type="button" class="rb-field-context-item" role="menuitem" data-action="assign-y"' +
+			(canAssignY ? '' : ' disabled') + '>' +
+			RM.Components.escapeHtml(t('pages.reportBuilder.fieldContextAssignY')) + '</button>';
+
+		document.body.appendChild(menu);
+		fieldContextMenu = menu;
+
+		var rect = fieldEl.getBoundingClientRect();
+		var top = rect.bottom + window.scrollY + 4;
+		var left = rect.left + window.scrollX;
+		menu.style.top = top + 'px';
+		menu.style.left = left + 'px';
+
+		var menuRect = menu.getBoundingClientRect();
+		if (left + menuRect.width > window.scrollX + window.innerWidth - 8) {
+			left = window.scrollX + window.innerWidth - menuRect.width - 8;
+			menu.style.left = left + 'px';
+		}
+		if (top + menuRect.height > window.scrollY + window.innerHeight - 8) {
+			top = rect.top + window.scrollY - menuRect.height - 4;
+			menu.style.top = top + 'px';
+		}
+
+		menu.addEventListener('click', function (e) {
+			var item = e.target.closest('[data-action]');
+			if (!item || item.disabled) { return; }
+			e.stopPropagation();
+			var action = item.getAttribute('data-action');
+			closeFieldContextMenu();
+			if (action === 'preview') {
+				openFieldPreviewModal(key, role);
+				return;
+			}
+			if (action === 'assign-x') {
+				assignFieldToAxis('x', key, role);
+				return;
+			}
+			if (action === 'assign-y') {
+				assignFieldToAxis('y', key, role);
+			}
+		});
+
+		if (event) {
+			event.preventDefault();
+			event.stopPropagation();
+		}
+
+		setTimeout(function () {
+			document.addEventListener('click', onFieldContextMenuOutside, true);
+			document.addEventListener('keydown', onFieldContextMenuKeydown);
+		}, 0);
+	}
+
+	function renderFieldPreviewBody(preview) {
+		if (!preview || !preview.totalRows) {
+			return RM.Components.emptyState(
+				t('pages.reportBuilder.fieldPreviewNoData'),
+				t('pages.reportBuilder.fieldPreviewNoDataHint')
+			);
+		}
+
+		var metaBits = [
+			t('pages.reportBuilder.fieldPreviewEntity', { entity: preview.entityLabel }),
+			t('pages.reportBuilder.fieldPreviewType', { type: preview.type }),
+			t('pages.reportBuilder.fieldPreviewDistinct', { count: preview.distinctCount })
+		];
+		if (preview.emptyCount) {
+			metaBits.push(t('pages.reportBuilder.fieldPreviewEmpty', { count: preview.emptyCount }));
+		}
+
+		var summary = preview.isRecordCount
+			? t('pages.reportBuilder.fieldPreviewRecordCountLead', {
+				total: preview.totalRows,
+				entity: preview.entityLabel
+			})
+			: t('pages.reportBuilder.fieldPreviewLead', { total: preview.totalRows });
+
+		var tableHtml = '';
+		if (preview.values.length) {
+			tableHtml = '<div class="table-responsive"><table class="data-table rb-field-preview-table"><thead><tr>' +
+				'<th>' + RM.Components.escapeHtml(t('pages.reportBuilder.fieldPreviewValue')) + '</th>' +
+				'<th>' + RM.Components.escapeHtml(t('pages.reportBuilder.fieldPreviewCount')) + '</th>' +
+				'</tr></thead><tbody>' +
+				preview.values.map(function (row) {
+					return '<tr><td>' + RM.Components.escapeHtml(row.value == null ? '' : String(row.value)) +
+						'</td><td><strong>' + row.count + '</strong></td></tr>';
+				}).join('') +
+				'</tbody></table></div>';
+		}
+
+		return '<p class="text-muted rb-field-preview-lead">' + RM.Components.escapeHtml(summary) + '</p>' +
+			'<p class="rb-field-preview-meta">' + metaBits.map(function (bit) {
+				return RM.Components.escapeHtml(bit);
+			}).join(' · ') + '</p>' +
+			tableHtml;
+	}
+
+	function openFieldPreviewModal(fieldKey, role) {
+		readFormState();
+		var ref;
+		if (fieldKey === '__count__') {
+			ref = { entity: state.primaryEntity || 'client', field: '__count__' };
+		} else {
+			ref = RM.ReportDataModel.parseFieldRef(fieldKey);
+		}
+		var user = RM.Session.getCurrentUser();
+		var preview = RM.ReportBuilderEngine.previewFieldData(ref.entity, ref.field, user, {
+			primaryEntityId: state.primaryEntity || 'client',
+			limit: 25
+		});
+		RM.Components.openModal(
+			preview.label,
+			renderFieldPreviewBody(preview),
+			null,
+			{ modalClass: 'rb-field-preview-modal' }
+		);
+	}
+
 	function assignFieldToAxis(axis, fieldKey, role) {
 		readFormState();
+		if (axis === 'y' && fieldKey !== '__count__' && role !== 'measure') {
+			RM.Components.showToast(t('pages.reportBuilder.yMustBeMeasure'), 'warning');
+			return;
+		}
 		if (axis === 'y' && fieldKey === '__count__') {
 			applyFieldToAxis('y', fieldKey, role);
 			renderPage();
-			runPreview();
 			return;
 		}
 		if (axis === 'x' && role === 'measure') {
@@ -1163,32 +1403,12 @@
 		if (axis === 'x' && role !== 'measure') {
 			applyFieldToAxis('x', fieldKey, role);
 			renderPage();
-			runPreview();
 			return;
 		}
 		if (axis === 'y') {
 			applyFieldToAxis('y', fieldKey, role);
 			renderPage();
-			runPreview();
 		}
-	}
-
-	function handlePaletteFieldClick(fieldEl) {
-		var key = fieldEl.getAttribute('data-field-key');
-		var role = fieldEl.getAttribute('data-field-role');
-		if (!state.chart.xAxis && role === 'dimension') {
-			assignFieldToAxis('x', key, role);
-			return;
-		}
-		if (role === 'measure' || key === '__count__') {
-			assignFieldToAxis('y', key, role);
-			return;
-		}
-		if (!isYAxisFilled()) {
-			assignFieldToAxis('y', '__count__', 'measure');
-			return;
-		}
-		RM.Components.showToast(t('pages.reportBuilder.axisAlreadySet'), 'info');
 	}
 
 	function wireEvents(main) {
@@ -1245,7 +1465,7 @@
 				readFormState();
 				state.filters.splice(parseInt(removeBtn.getAttribute('data-filter-remove'), 10), 1);
 				renderPage();
-				runPreview();
+				if (previewModalOpen) { runPreview(); }
 				return;
 			}
 
@@ -1297,7 +1517,11 @@
 
 			var dragField = e.target.closest('.rb-drag-field');
 			if (dragField) {
-				handlePaletteFieldClick(dragField);
+				if (paletteDragOccurred) {
+					paletteDragOccurred = false;
+					return;
+				}
+				openFieldContextMenu(dragField, e);
 				return;
 			}
 
@@ -1312,20 +1536,17 @@
 				});
 				state.showAdvanced = true;
 				renderPage();
-				runPreview();
+				return;
+			}
+
+			if (e.target.closest('#rb-preview-fab')) {
+				openPreviewModal();
 				return;
 			}
 
 			if (e.target.closest('#rb-save')) {
 				saveReport();
 				return;
-			}
-			if (e.target.closest('#rb-export')) {
-				exportReport();
-				return;
-			}
-			if (e.target.closest('#rb-new')) {
-				resetToNewReport();
 			}
 		});
 
@@ -1339,24 +1560,12 @@
 		});
 
 		main.addEventListener('change', function (e) {
-			if (e.target.closest('#rb-preview-filter-bar')) {
-				readFormState();
-				readFiltersFromDom();
-				if (e.target.matches('[data-param-input="preset"]')) {
-					renderPage();
-					return;
-				}
-				runPreview();
-				return;
-			}
-
 			if (e.target.id === 'rb-row-grain') {
 				readFormState();
 				state.primaryEntity = e.target.value;
 				state.grainLocked = true;
 				syncJoinsFromState();
 				renderPage();
-				runPreview();
 				return;
 			}
 
@@ -1371,20 +1580,6 @@
 				return;
 			}
 
-			if (e.target.id === 'rb-saved') {
-				var id = e.target.value;
-				if (!id) {
-					resetToNewReport();
-					return;
-				}
-				var saved = RM.CustomReportRepository.findById(id);
-				if (saved) {
-					applyConfig(saved);
-					renderPage();
-				}
-				return;
-			}
-
 			if (e.target.closest('#rb-filters') && e.target.hasAttribute('data-filter-part')) {
 				handleFixedFilterChange(e);
 				return;
@@ -1392,17 +1587,9 @@
 		});
 
 		main.addEventListener('input', function (e) {
-			if (e.target.closest('#rb-preview-filter-bar')) {
-				runPreview();
-				return;
-			}
 			if (e.target.closest('#rb-filters') && e.target.matches('[data-filter-part="value"]')) {
 				readFiltersFromDom();
-				runPreview();
-				return;
-			}
-			if (e.target.id === 'rb-name') {
-				return;
+				if (previewModalOpen) { runPreview(); }
 			}
 		});
 	}

@@ -40,6 +40,7 @@
 		'repositories/initiativeRepository.js',
 		'repositories/serviceUtilizationRepository.js',
 		'repositories/customReportRepository.js',
+		'repositories/reportSubscriptionRepository.js',
 		'services/deduplicationService.js',
 		'services/crossProgramFlagService.js',
 		'services/caseCategoryService.js',

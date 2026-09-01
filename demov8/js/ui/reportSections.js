@@ -314,186 +314,233 @@
 			'<div class="report-tier-body">' + bodyHtml + '</div></details>';
 	}
 
+	function cardHeader(titleKey, reportKey, downloadBarHtml) {
+		var title = t(titleKey);
+		var subscribe = RM.ReportSubscribe
+			? RM.ReportSubscribe.subscribeButtonHtml(reportKey, 'standard', title)
+			: '';
+		return '<div class="card-header"><h2>' + RM.Components.escapeHtml(title) + '</h2>' +
+			'<div class="report-card-actions">' + subscribe + (downloadBarHtml || '') + '</div></div>';
+	}
+
+	function integrityBodyHtml(prefix) {
+		return '<div class="card">' + cardHeader('pages.reports.clientDataIntegrity', 'integrity-client-data-integrity',
+			RM.Components.downloadBar({ csvId: prefix + '-integrity' })) +
+			'<div id="' + prefix + '-integrity-summary"></div><div id="' + prefix + '-integrity-issues"></div></div>' +
+			'<div class="card">' + cardHeader('pages.reports.systemAuditLog', 'integrity-system-audit-log',
+			RM.Components.downloadBar({ csvId: prefix + '-audit-log' })) +
+			'<div id="' + prefix + '-audit-log"></div></div>';
+	}
+
+	function executiveBodyHtml(prefix) {
+		return '<div class="card-grid" id="' + prefix + '-impact-stats"></div>' +
+			'<div class="card">' + cardHeader('pages.reports.communityImpact', 'executive-community-impact',
+			RM.Components.downloadBar({ csvId: prefix + '-impact-detail' })) +
+			'<div class="auditor-summary-grid">' +
+			'<div><h3>' + RM.Components.escapeHtml(t('pages.reports.zipDistribution')) + '</h3><div id="' + prefix + '-zip-chart"></div></div>' +
+			'<div><h3>' + RM.Components.escapeHtml(t('pages.reports.ageDistribution')) + '</h3><div id="' + prefix + '-age-chart"></div></div>' +
+			'</div></div>' +
+			'<div class="card">' + cardHeader('pages.reports.initiativePerformance', 'executive-initiative-performance',
+			RM.Components.downloadBar({ csvId: prefix + '-initiatives' })) +
+			'<div id="' + prefix + '-initiatives"></div></div>' +
+			'<div class="card">' + cardHeader('pages.reports.outcomeKpis', 'executive-outcome-kpis',
+			RM.Components.downloadBar({ csvId: prefix + '-outcome-kpis' })) +
+			'<div id="' + prefix + '-outcome-kpis"></div></div>';
+	}
+
+	function operationalBodyHtml(prefix) {
+		return '<div class="card">' + cardHeader('pages.reports.subdivisionCaseload', 'operational-subdivision-caseload',
+			RM.Components.downloadBar({ imageTarget: prefix + '-subdivision-chart', csvId: prefix + '-subdivision' })) +
+			'<div id="' + prefix + '-subdivision-chart" class="risk-chart program-chart"></div>' +
+			'<div id="' + prefix + '-subdivision-table"></div></div>' +
+			'<div class="card">' + cardHeader('pages.reports.serviceUtilizationTrend', 'operational-service-utilization',
+			RM.Components.downloadBar({ imageTarget: prefix + '-utilization-chart', csvId: prefix + '-utilization' })) +
+			'<div id="' + prefix + '-utilization-chart" class="risk-chart program-chart"></div></div>' +
+			'<div class="card">' + cardHeader('pages.reports.staffActivity', 'operational-staff-activity',
+			RM.Components.downloadBar({ csvId: prefix + '-staff-activity' })) +
+			'<div id="' + prefix + '-staff-activity"></div></div>';
+	}
+
+	var TIER_LEAD_KEYS = {
+		executive: 'pages.reports.tierExecutiveLead',
+		operational: 'pages.reports.tierOperationalLead',
+		integrity: 'pages.reports.tierIntegrityLead',
+		caseload: 'pages.reports.tierCaseloadLead'
+	};
+
+	function setHtml(elementId, html) {
+		var el = document.getElementById(elementId);
+		if (el) { el.innerHTML = html; }
+		return el;
+	}
+
+	function mountExecutive(prefix, caseManagerId) {
+		var impact = RM.ReportEngine.communityImpactDashboard(caseManagerId);
+		var kpis = RM.ReportEngine.performanceOutcomeKpis(caseManagerId);
+		var initiatives = RM.ReportEngine.initiativePerformance();
+
+		var statsEl = document.getElementById(prefix + '-impact-stats');
+		if (statsEl) {
+			statsEl.innerHTML =
+				RM.Components.statCard(impact.totalClients, t('pages.reports.totalClients'), 'users', 'primary', null) +
+				RM.Components.statCard(impact.activeCases, t('pages.reports.activeCases'), 'briefcase', 'success', null) +
+				RM.Components.statCard(impact.registrationOnly, t('pages.reports.registrationOnlyStat'), 'user-plus', 'accent', null) +
+				RM.Components.statCard(impact.servicesDelivered, t('pages.reports.servicesDelivered'), 'check-circle', 'warning', null);
+		}
+
+		renderDistributionChart(prefix + '-zip-chart', impact.zipDistribution.slice(0, 8), 'zip', 'count', 'color', {
+			bucketAttr: 'data-zip',
+			bucketValue: function (row) { return row.zip; },
+			ariaLabel: function (row) {
+				return t('pages.reports.zipDrilldownAria', { zip: row.zip, count: row.count });
+			},
+			onSelect: function (zip, row, chartEl) {
+				var clients = RM.ReportEngine.clientsForZip(zip, caseManagerId);
+				openClientListDrawer(
+					t('pages.reports.zipDrawerTitle', { zip: zip, count: clients.length }),
+					clients,
+					chartEl,
+					'.program-chart-row'
+				);
+			}
+		});
+		renderDistributionChart(prefix + '-age-chart', impact.ageDistribution, 'ageBandLabel', 'count', 'color', {
+			bucketAttr: 'data-age-band',
+			bucketValue: function (row) { return row.ageBand; },
+			ariaLabel: function (row) {
+				return t('pages.reports.ageDrilldownAria', { band: row.ageBandLabel, count: row.count });
+			},
+			onSelect: function (ageBand, row, chartEl) {
+				var clients = RM.ReportEngine.clientsForAgeBand(ageBand, caseManagerId);
+				openClientListDrawer(
+					t('pages.reports.ageDrawerTitle', { band: RM.I18n.t('pages.reports.ageBand.' + ageBand), count: clients.length }),
+					clients,
+					chartEl,
+					'.program-chart-row'
+				);
+			}
+		});
+
+		setHtml(prefix + '-initiatives', renderSimpleTable(
+			initiativeColumns(),
+			initiatives,
+			'pages.reports.noInitiatives',
+			'pages.reports.noInitiativesHint'
+		));
+
+		setHtml(prefix + '-outcome-kpis',
+			'<div class="card-grid">' +
+			RM.Components.statCard(kpis.referralCompletionRate != null ? kpis.referralCompletionRate + '%' : '—', t('pages.reports.referralCompletionRate'), 'link', 'primary', null) +
+			RM.Components.statCard(kpis.avgTimeToServiceDays != null ? kpis.avgTimeToServiceDays : '—', t('pages.reports.avgTimeToService'), 'clock', 'success', null) +
+			RM.Components.statCard(kpis.intakeWithin7DayPct != null ? kpis.intakeWithin7DayPct + '%' : '—', t('pages.reports.intakeWithin7Day'), 'clipboard', 'accent', null) +
+			RM.Components.statCard((kpis.enrollmentTrendPct > 0 ? '+' : '') + kpis.enrollmentTrendPct + '%', t('pages.reports.enrollmentTrend'), 'trending-up', 'warning', null) +
+			'</div>');
+
+		return { impact: impact, kpis: kpis, initiatives: initiatives };
+	}
+
+	function mountOperational(prefix, caseManagerId) {
+		var subdivision = RM.ReportEngine.subdivisionCaseloadSummary(caseManagerId);
+		var utilization = RM.ReportEngine.serviceUtilizationTrend();
+		var staff = RM.ReportEngine.staffActivityUtilization(caseManagerId);
+
+		renderDistributionChart(prefix + '-subdivision-chart', subdivision, 'subdivisionLabel', 'openCases', 'color', {
+			bucketAttr: 'data-subdivision-id',
+			bucketValue: function (row) { return row.subdivisionId; },
+			ariaLabel: function (row) {
+				return t('pages.reports.subdivisionDrilldownAria', { subdivision: row.subdivisionLabel, count: row.openCases });
+			},
+			onSelect: function (subdivisionId, row, chartEl) {
+				var clients = RM.ReportEngine.clientsForSubdivision(subdivisionId, caseManagerId);
+				var label = RM.ReportEngine.subdivisionLabel(subdivisionId);
+				openClientListDrawer(
+					t('pages.reports.subdivisionDrawerTitle', { subdivision: label, count: clients.length }),
+					clients,
+					chartEl,
+					'.program-chart-row'
+				);
+			}
+		});
+		setHtml(prefix + '-subdivision-table', renderSimpleTable(
+			subdivisionColumns(),
+			subdivision,
+			'pages.reports.noSubdivisionData',
+			'pages.reports.noSubdivisionDataHint'
+		));
+
+		renderUtilizationTrendChart(prefix + '-utilization-chart', utilization, {
+			onSelect: function (category, row, chartEl) {
+				var match = utilization.series.find(function (series) { return series.category === category; });
+				var label = match ? match.categoryLabel : category;
+				openUtilizationDrawer(category, label, chartEl);
+			}
+		});
+
+		var staffEl = setHtml(prefix + '-staff-activity', renderStaffActivityTable(staff));
+		if (staffEl) { wireStaffActivityDrilldown(staffEl); }
+
+		return { subdivision: subdivision, utilization: utilization, staff: staff };
+	}
+
+	function mountIntegrity(prefix, caseManagerId) {
+		var integrity = RM.ReportEngine.clientDataIntegrityAudit(caseManagerId);
+		var auditLog = RM.ReportEngine.systemAuditLogExport();
+
+		setHtml(prefix + '-integrity-summary',
+			'<div class="card-grid" style="margin-bottom:1rem">' +
+			RM.Components.statCard(integrity.summary.duplicatePairs, t('pages.reports.duplicatePairs'), 'copy', 'warning', null) +
+			RM.Components.statCard(integrity.summary.incompleteIntakes, t('pages.reports.incompleteIntakes'), 'alert-circle', 'accent', null) +
+			RM.Components.statCard(integrity.summary.registrationOnly, t('pages.reports.registrationOnlyStat'), 'user', 'primary', null) +
+			RM.Components.statCard(integrity.summary.missingCaseManager, t('pages.reports.missingCaseManager'), 'user-x', 'success', null) +
+			'</div>');
+
+		var integrityEl = setHtml(prefix + '-integrity-issues', renderIntegrityIssuesTable(integrity.issues));
+		if (integrityEl) { wireIntegrityDrilldown(integrityEl); }
+
+		setHtml(prefix + '-audit-log', renderSimpleTable(
+			auditLogColumns(),
+			auditLog.slice(0, 25),
+			'pages.reports.noAuditEntries',
+			'pages.reports.noAuditEntriesHint'
+		));
+
+		return { integrity: integrity, auditLog: auditLog };
+	}
+
 	RM.ReportSections = {
 		tierHeading: tierHeading,
 
+		buildTierHtml: function (prefix, tierKey) {
+			var bodyHtml = '';
+			if (tierKey === 'executive') { bodyHtml = executiveBodyHtml(prefix); }
+			else if (tierKey === 'operational') { bodyHtml = operationalBodyHtml(prefix); }
+			else if (tierKey === 'integrity') { bodyHtml = integrityBodyHtml(prefix); }
+			else { return ''; }
+			return '<div class="report-tier-page">' +
+				sectionSubheading(TIER_LEAD_KEYS[tierKey] || TIER_LEAD_KEYS.executive) +
+				bodyHtml + '</div>';
+		},
+
 		buildExtendedHtml: function (prefix) {
-			var executiveBody =
-				'<div class="card-grid" id="' + prefix + '-impact-stats"></div>' +
-				'<div class="card"><div class="card-header"><h2>' + RM.Components.escapeHtml(t('pages.reports.communityImpact')) + '</h2>' +
-				RM.Components.downloadBar({ csvId: prefix + '-impact-detail' }) +
-				'</div><div class="auditor-summary-grid">' +
-				'<div><h3>' + RM.Components.escapeHtml(t('pages.reports.zipDistribution')) + '</h3><div id="' + prefix + '-zip-chart"></div></div>' +
-				'<div><h3>' + RM.Components.escapeHtml(t('pages.reports.ageDistribution')) + '</h3><div id="' + prefix + '-age-chart"></div></div>' +
-				'</div></div>' +
-				'<div class="card"><div class="card-header"><h2>' + RM.Components.escapeHtml(t('pages.reports.initiativePerformance')) + '</h2>' +
-				RM.Components.downloadBar({ csvId: prefix + '-initiatives' }) +
-				'</div><div id="' + prefix + '-initiatives"></div></div>' +
-				'<div class="card"><div class="card-header"><h2>' + RM.Components.escapeHtml(t('pages.reports.outcomeKpis')) + '</h2>' +
-				RM.Components.downloadBar({ csvId: prefix + '-outcome-kpis' }) +
-				'</div><div id="' + prefix + '-outcome-kpis"></div></div>';
-
-			var operationalBody =
-				'<div class="card"><div class="card-header"><h2>' + RM.Components.escapeHtml(t('pages.reports.subdivisionCaseload')) + '</h2>' +
-				RM.Components.downloadBar({ imageTarget: prefix + '-subdivision-chart', csvId: prefix + '-subdivision' }) +
-				'</div><div id="' + prefix + '-subdivision-chart" class="risk-chart program-chart"></div>' +
-				'<div id="' + prefix + '-subdivision-table"></div></div>' +
-				'<div class="card"><div class="card-header"><h2>' + RM.Components.escapeHtml(t('pages.reports.serviceUtilizationTrend')) + '</h2>' +
-				RM.Components.downloadBar({ imageTarget: prefix + '-utilization-chart', csvId: prefix + '-utilization' }) +
-				'</div><div id="' + prefix + '-utilization-chart" class="risk-chart program-chart"></div></div>' +
-				'<div class="card"><div class="card-header"><h2>' + RM.Components.escapeHtml(t('pages.reports.staffActivity')) + '</h2>' +
-				RM.Components.downloadBar({ csvId: prefix + '-staff-activity' }) +
-				'</div><div id="' + prefix + '-staff-activity"></div></div>';
-
-			var integrityBody =
-				'<div class="card"><div class="card-header"><h2>' + RM.Components.escapeHtml(t('pages.reports.clientDataIntegrity')) + '</h2>' +
-				RM.Components.downloadBar({ csvId: prefix + '-integrity' }) +
-				'</div><div id="' + prefix + '-integrity-summary"></div><div id="' + prefix + '-integrity-issues"></div></div>' +
-				'<div class="card"><div class="card-header"><h2>' + RM.Components.escapeHtml(t('pages.reports.systemAuditLog')) + '</h2>' +
-				RM.Components.downloadBar({ csvId: prefix + '-audit-log' }) +
-				'</div><div id="' + prefix + '-audit-log"></div></div>';
-
-			return tierBlock('executive', 'pages.reports.tierExecutiveLead', executiveBody, true) +
-				tierBlock('operational', 'pages.reports.tierOperationalLead', operationalBody, false) +
-				tierBlock('integrity', 'pages.reports.tierIntegrityLead', integrityBody, false) +
+			return tierBlock('executive', TIER_LEAD_KEYS.executive, executiveBodyHtml(prefix), true) +
+				tierBlock('operational', TIER_LEAD_KEYS.operational, operationalBodyHtml(prefix), false) +
+				tierBlock('integrity', TIER_LEAD_KEYS.integrity, integrityBodyHtml(prefix), false) +
 				'<div class="report-tier-static">' +
 				tierHeading('caseload') +
-				sectionSubheading('pages.reports.tierCaseloadLead') +
+				sectionSubheading(TIER_LEAD_KEYS.caseload) +
 				'</div>';
 		},
 
-		mount: function (prefix, caseManagerId) {
-			var impact = RM.ReportEngine.communityImpactDashboard(caseManagerId);
-			var kpis = RM.ReportEngine.performanceOutcomeKpis(caseManagerId);
-			var initiatives = RM.ReportEngine.initiativePerformance();
-			var subdivision = RM.ReportEngine.subdivisionCaseloadSummary(caseManagerId);
-			var utilization = RM.ReportEngine.serviceUtilizationTrend();
-			var staff = RM.ReportEngine.staffActivityUtilization(caseManagerId);
-			var integrity = RM.ReportEngine.clientDataIntegrityAudit(caseManagerId);
-			var auditLog = RM.ReportEngine.systemAuditLogExport();
-
-			var statsEl = document.getElementById(prefix + '-impact-stats');
-			if (statsEl) {
-				statsEl.innerHTML =
-					RM.Components.statCard(impact.totalClients, t('pages.reports.totalClients'), 'users', 'primary', null) +
-					RM.Components.statCard(impact.activeCases, t('pages.reports.activeCases'), 'briefcase', 'success', null) +
-					RM.Components.statCard(impact.registrationOnly, t('pages.reports.registrationOnlyStat'), 'user-plus', 'accent', null) +
-					RM.Components.statCard(impact.servicesDelivered, t('pages.reports.servicesDelivered'), 'check-circle', 'warning', null);
+		mount: function (prefix, caseManagerId, tierKey) {
+			var data = {};
+			if (tierKey === 'executive') {
+				Object.assign(data, mountExecutive(prefix, caseManagerId));
+			} else if (tierKey === 'operational') {
+				Object.assign(data, mountOperational(prefix, caseManagerId));
+			} else if (tierKey === 'integrity') {
+				Object.assign(data, mountIntegrity(prefix, caseManagerId));
 			}
-
-			renderDistributionChart(prefix + '-zip-chart', impact.zipDistribution.slice(0, 8), 'zip', 'count', 'color', {
-				bucketAttr: 'data-zip',
-				bucketValue: function (row) { return row.zip; },
-				ariaLabel: function (row) {
-					return t('pages.reports.zipDrilldownAria', { zip: row.zip, count: row.count });
-				},
-				onSelect: function (zip, row, chartEl) {
-					var clients = RM.ReportEngine.clientsForZip(zip, caseManagerId);
-					openClientListDrawer(
-						t('pages.reports.zipDrawerTitle', { zip: zip, count: clients.length }),
-						clients,
-						chartEl,
-						'.program-chart-row'
-					);
-				}
-			});
-			renderDistributionChart(prefix + '-age-chart', impact.ageDistribution, 'ageBandLabel', 'count', 'color', {
-				bucketAttr: 'data-age-band',
-				bucketValue: function (row) { return row.ageBand; },
-				ariaLabel: function (row) {
-					return t('pages.reports.ageDrilldownAria', { band: row.ageBandLabel, count: row.count });
-				},
-				onSelect: function (ageBand, row, chartEl) {
-					var clients = RM.ReportEngine.clientsForAgeBand(ageBand, caseManagerId);
-					openClientListDrawer(
-						t('pages.reports.ageDrawerTitle', { band: RM.I18n.t('pages.reports.ageBand.' + ageBand), count: clients.length }),
-						clients,
-						chartEl,
-						'.program-chart-row'
-					);
-				}
-			});
-
-			document.getElementById(prefix + '-initiatives').innerHTML = renderSimpleTable(
-				initiativeColumns(),
-				initiatives,
-				'pages.reports.noInitiatives',
-				'pages.reports.noInitiativesHint'
-			);
-
-			document.getElementById(prefix + '-outcome-kpis').innerHTML =
-				'<div class="card-grid">' +
-				RM.Components.statCard(kpis.referralCompletionRate != null ? kpis.referralCompletionRate + '%' : '—', t('pages.reports.referralCompletionRate'), 'link', 'primary', null) +
-				RM.Components.statCard(kpis.avgTimeToServiceDays != null ? kpis.avgTimeToServiceDays : '—', t('pages.reports.avgTimeToService'), 'clock', 'success', null) +
-				RM.Components.statCard(kpis.intakeWithin7DayPct != null ? kpis.intakeWithin7DayPct + '%' : '—', t('pages.reports.intakeWithin7Day'), 'clipboard', 'accent', null) +
-				RM.Components.statCard((kpis.enrollmentTrendPct > 0 ? '+' : '') + kpis.enrollmentTrendPct + '%', t('pages.reports.enrollmentTrend'), 'trending-up', 'warning', null) +
-				'</div>';
-
-			renderDistributionChart(prefix + '-subdivision-chart', subdivision, 'subdivisionLabel', 'openCases', 'color', {
-				bucketAttr: 'data-subdivision-id',
-				bucketValue: function (row) { return row.subdivisionId; },
-				ariaLabel: function (row) {
-					return t('pages.reports.subdivisionDrilldownAria', { subdivision: row.subdivisionLabel, count: row.openCases });
-				},
-				onSelect: function (subdivisionId, row, chartEl) {
-					var clients = RM.ReportEngine.clientsForSubdivision(subdivisionId, caseManagerId);
-					var label = RM.ReportEngine.subdivisionLabel(subdivisionId);
-					openClientListDrawer(
-						t('pages.reports.subdivisionDrawerTitle', { subdivision: label, count: clients.length }),
-						clients,
-						chartEl,
-						'.program-chart-row'
-					);
-				}
-			});
-			document.getElementById(prefix + '-subdivision-table').innerHTML = renderSimpleTable(
-				subdivisionColumns(),
-				subdivision,
-				'pages.reports.noSubdivisionData',
-				'pages.reports.noSubdivisionDataHint'
-			);
-
-			renderUtilizationTrendChart(prefix + '-utilization-chart', utilization, {
-				onSelect: function (category, row, chartEl) {
-					var match = utilization.series.find(function (series) { return series.category === category; });
-					var label = match ? match.categoryLabel : category;
-					openUtilizationDrawer(category, label, chartEl);
-				}
-			});
-
-			var staffEl = document.getElementById(prefix + '-staff-activity');
-			staffEl.innerHTML = renderStaffActivityTable(staff);
-			wireStaffActivityDrilldown(staffEl);
-
-			document.getElementById(prefix + '-integrity-summary').innerHTML =
-				'<div class="card-grid" style="margin-bottom:1rem">' +
-				RM.Components.statCard(integrity.summary.duplicatePairs, t('pages.reports.duplicatePairs'), 'copy', 'warning', null) +
-				RM.Components.statCard(integrity.summary.incompleteIntakes, t('pages.reports.incompleteIntakes'), 'alert-circle', 'accent', null) +
-				RM.Components.statCard(integrity.summary.registrationOnly, t('pages.reports.registrationOnlyStat'), 'user', 'primary', null) +
-				RM.Components.statCard(integrity.summary.missingCaseManager, t('pages.reports.missingCaseManager'), 'user-x', 'success', null) +
-				'</div>';
-
-			var integrityEl = document.getElementById(prefix + '-integrity-issues');
-			integrityEl.innerHTML = renderIntegrityIssuesTable(integrity.issues);
-			wireIntegrityDrilldown(integrityEl);
-
-			document.getElementById(prefix + '-audit-log').innerHTML = renderSimpleTable(
-				auditLogColumns(),
-				auditLog.slice(0, 25),
-				'pages.reports.noAuditEntries',
-				'pages.reports.noAuditEntriesHint'
-			);
-
-			return {
-				impact: impact,
-				kpis: kpis,
-				initiatives: initiatives,
-				subdivision: subdivision,
-				utilization: utilization,
-				staff: staff,
-				integrity: integrity,
-				auditLog: auditLog
-			};
+			return data;
 		},
 
 		getDownloadHandlers: function (prefix, caseManagerId, data) {
@@ -502,10 +549,9 @@
 			var kpis = data.kpis || RM.ReportEngine.performanceOutcomeKpis(caseManagerId);
 
 			return {
-				images: {},
-				spreadsheet: {
+				images: {
 					[prefix + '-subdivision-chart']: function () {
-						var rows = data.subdivision;
+						var rows = data.subdivision || RM.ReportEngine.subdivisionCaseloadSummary(caseManagerId);
 						var total = rows.reduce(function (sum, row) { return sum + row.openCases; }, 0);
 						RM.Components.exportProgramDistributionBarChartPng(
 							rows.map(function (row) {

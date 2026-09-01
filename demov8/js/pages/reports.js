@@ -17,6 +17,20 @@
 	var storeListenerBound = false;
 	var pageFilterValues = null;
 
+	var REPORT_TIERS = ['executive', 'operational', 'integrity', 'caseload'];
+
+	function currentReportTier() {
+		var params = new URLSearchParams(window.location.search);
+		var tier = params.get('tier');
+		if (REPORT_TIERS.indexOf(tier) !== -1) { return tier; }
+		return 'caseload';
+	}
+
+	function activeNavIdForPage() {
+		if (RM.Permissions.isAuditor()) { return 'reports-integrity'; }
+		return 'reports-' + currentReportTier();
+	}
+
 	function applyPageFilters(existingValues) {
 		if (RM.ReportRuntimeFilters) {
 			var bar = document.getElementById('reports-filter-bar');
@@ -108,7 +122,8 @@
 		return '<div class="card report-editable-card' + (catalogId ? ' is-editable' : '') +
 			'" data-report-template="' + RM.Components.escapeHtml(catalogId || '') + '">' +
 			'<div class="card-header"><h2>' + reportCardTitle(t('pages.reports.clientsByProgram'), catalogId) + '</h2>' +
-			reportCardActions(catalogId, RM.Components.downloadBar({ imageTarget: chartId, csvId: csvId })) +
+			reportCardActions(catalogId, RM.Components.downloadBar({ imageTarget: chartId, csvId: csvId }),
+				t('pages.reports.clientsByProgram')) +
 			'</div><p class="text-muted report-card-lead">' + RM.Components.escapeHtml(t('pages.reports.clientsByProgramHint')) + '</p>' +
 			'<div id="' + chartId + '" class="risk-chart program-chart"></div></div>';
 	}
@@ -178,28 +193,31 @@
 			reportCardActions(catalogId, RM.Components.downloadBar({
 				imageTarget: prefix + '-multi-program-chart',
 				csvId: prefix + '-multi-program'
-			})) +
+			}), t('pages.reports.multiProgramEnrollment')) +
 			'</div><p class="text-muted report-card-lead">' + RM.Components.escapeHtml(t('pages.reports.multiProgramEnrollmentHint')) + '</p>' +
 			'<p id="' + prefix + '-multi-program-summary" class="liaison-results-summary"></p>' +
 			'<div id="' + prefix + '-multi-program-chart" class="risk-chart program-chart"></div>' +
 			'<div id="' + prefix + '-multi-program-table"></div></div>';
 	}
 
-	function reportCardActions(catalogId, downloadBarHtml) {
+	function reportCardActions(catalogId, downloadBarHtml, reportTitle) {
 		var editBtn = catalogId && RM.ReportCatalog
 			? '<a href="' + RM.Components.escapeHtml(RM.ReportCatalog.builderUrl(catalogId)) +
-				'" class="btn btn-secondary btn-sm report-edit-btn" title="' +
+				'" class="btn btn-secondary btn-sm report-card-btn report-edit-btn" title="' +
 				RM.Components.escapeHtml(t('pages.reports.editInBuilderHint')) + '">' +
 				RM.Components.escapeHtml(t('pages.reports.editInBuilder')) + '</a>'
 			: '';
-		return '<div class="report-card-actions">' + editBtn + (downloadBarHtml || '') + '</div>';
+		var subscribeBtn = catalogId && RM.ReportSubscribe
+			? RM.ReportSubscribe.subscribeButtonHtml(catalogId, 'catalog', reportTitle || catalogId)
+			: '';
+		return '<div class="report-card-actions">' + editBtn + subscribeBtn + (downloadBarHtml || '') + '</div>';
 	}
 
 	function editableReportCard(titleKey, catalogId, bodyHtml, downloadBarHtml) {
 		return '<div class="card report-editable-card' + (catalogId ? ' is-editable' : '') +
 			'" data-report-template="' + RM.Components.escapeHtml(catalogId || '') + '">' +
 			'<div class="card-header"><h2>' + reportCardTitle(t(titleKey), catalogId) + '</h2>' +
-			reportCardActions(catalogId, downloadBarHtml) +
+			reportCardActions(catalogId, downloadBarHtml, t(titleKey)) +
 			'</div>' + bodyHtml + '</div>';
 	}
 
@@ -341,321 +359,55 @@
 	}
 
 	document.addEventListener('DOMContentLoaded', function () {
-		var isAuditor = RM.Session.getCurrentUser() && RM.Permissions.isAuditor();
 		RM.Boot.init({
 			activeModule: 'analytics',
-			activeNav: isAuditor ? 'audit-reports' : 'reports',
+			activeNav: activeNavIdForPage(),
 			onReady: function () {
-				if (RM.Permissions.isAuditor()) {
-					renderAuditorPage();
+				if (RM.Permissions.isAuditor() && currentReportTier() !== 'integrity') {
+					window.location.replace('reports.html?tier=integrity');
 					return;
 				}
-				renderPage();
+				renderTierPage();
 				if (!storeListenerBound) {
-					document.addEventListener('rm:store-changed', function () {
-						if (RM.Permissions.isAuditor()) {
-							renderAuditorPage();
-						} else {
-							renderPage();
-						}
-					});
+					document.addEventListener('rm:store-changed', renderTierPage);
 					storeListenerBound = true;
 				}
 			}
 		});
 	});
 
-	function renderAuditorPage() {
-		RM.Components.closeSideDrawer();
-
-		if (document.getElementById('reports-filter-bar') && RM.ReportRuntimeFilters) {
-			pageFilterValues = RM.ReportRuntimeFilters.readValues();
-		}
-		applyPageFilters(pageFilterValues);
-
-		var main = document.getElementById('page-content');
+	function renderAuditorSummaryHtml() {
 		var snapshot = RM.ReportEngine.programSnapshot();
-		var riskData = RM.ReportEngine.caseloadByRisk();
-		var overdueSummary = RM.ReportEngine.overdueSummary();
-		var cboSummary = RM.ReportEngine.cboReferralSummary();
-		var programData = RM.ReportEngine.clientsByProgram(null);
-		var programGroups = RM.ReportEngine.clientsByProgramGroups(null);
-		var programTotal = programData.reduce(function (sum, row) { return sum + row.count; }, 0);
-
-		main.innerHTML =
-			RM.Components.modulePageHeader('audit-reports') +
-			renderPageFilterBar() +
-			(RM.ReportSections ? RM.ReportSections.buildExtendedHtml('auditor') : '') +
-			'<div class="card-grid">' +
+		return '<div class="card-grid report-auditor-summary">' +
 			RM.Components.statCard(snapshot.totalActive, t('pages.reports.activeCaseload'), 'users', 'primary', null) +
 			RM.Components.statCard(snapshot.highRisk, t('pages.reports.highRisk'), 'chart', 'warning', null) +
 			RM.Components.statCard(snapshot.overdueFollowUps, t('pages.reports.overdueFollowUpsStat'), 'clock', 'accent', null) +
 			RM.Components.statCard(snapshot.openCboReferrals, t('pages.reports.openCboStat'), 'link', 'success', null) +
-			'</div>' +
-			programReportCard('auditor-report-program', 'auditor-report-program', 'clients-by-program') +
-			multiProgramReportCard('auditor', 'multi-program-enrollment') +
+			'</div>';
+	}
+
+	function renderCaseloadHtml(prefix) {
+		return '<div class="report-tier-page">' +
+			'<p class="text-muted report-tier-lead">' + RM.Components.escapeHtml(t('pages.reports.tierCaseloadLead')) + '</p>' +
+			programReportCard(prefix + '-program', prefix + '-program', 'clients-by-program') +
+			multiProgramReportCard(prefix, 'multi-program-enrollment') +
 			editableReportCard('pages.reports.caseloadByRisk', 'caseload-by-risk',
-				'<div id="auditor-report-risk"></div>',
-				RM.Components.downloadBar({ imageTarget: 'auditor-report-risk', csvId: 'auditor-report-risk' })) +
-			editableReportCard('pages.reports.enrollmentsByProgram', 'event-enrollment',
+				'<div id="' + prefix + '-risk"></div>',
+				RM.Components.downloadBar({ imageTarget: prefix + '-risk', csvId: prefix + '-risk' })) +
+			editableReportCard('pages.reports.clientsEnrolledInEvent', 'event-enrollment',
 				'<p class="text-muted report-card-lead">' + RM.Components.escapeHtml(t('pages.reports.eventEnrollmentFilterHint')) + '</p>' +
-				'<div id="auditor-report-event-data"></div>',
-				RM.Components.downloadBar({ csvId: 'auditor-report-event' })) +
-			editableReportCard('pages.reports.overdueSummary', 'overdue-follow-ups',
-				'<div id="auditor-report-overdue"></div>',
-				RM.Components.downloadBar({ imageTarget: 'auditor-report-overdue', csvId: 'auditor-report-overdue' })) +
-			editableReportCard('pages.reports.cboSummary', 'open-cbo-referrals',
-				'<div id="auditor-report-cbo"></div>',
-				RM.Components.downloadBar({ imageTarget: 'auditor-report-cbo', csvId: 'auditor-report-cbo' }));
-
-		document.getElementById('auditor-report-risk').innerHTML = renderRiskTable(riskData);
-		wireRiskDrilldown(RM.ReportEngine.clientsGroupedByRisk(null), 'auditor-report-risk');
-		renderProgramDistributionChart('auditor-report-program', programData, programGroups);
-		var auditorMultiProgram = mountMultiProgramReport('auditor', null);
-		var auditorExtendedData = RM.ReportSections ? RM.ReportSections.mount('auditor', null) : null;
-
-		function refreshAuditorEnrollment() {
-			var eventData = RM.ReportEngine.enrolledInEvent(null, null);
-			document.getElementById('auditor-report-event-data').innerHTML = eventData.length
-				? renderEnrollmentTable(eventData)
-				: RM.Components.emptyState(t('pages.reports.noEnrollments'), t('pages.reports.noEnrollmentsAuditor'));
-			wireEnrollmentDrilldown(eventData, 'auditor-report-event-data');
-		}
-
-		refreshAuditorEnrollment();
-
-		document.getElementById('auditor-report-overdue').innerHTML = renderAuditorOverdueSummary(overdueSummary);
-		wireAuditorOverdueDrilldown(overdueSummary);
-		document.getElementById('auditor-report-cbo').innerHTML = renderAuditorCboSummary(cboSummary);
-		wireAuditorCboDrilldown(cboSummary);
-
-		RM.Components.wireDownloadActions(main, mergeDownloadHandlers({
-			images: {
-				'auditor-report-program': function () {
-					RM.Components.exportProgramDistributionBarChartPng(
-						programData,
-						programTotal,
-						t('pages.reports.clientsByProgram'),
-						'audit-people-by-program.png'
-					);
-				},
-				'auditor-multi-program-chart': function () {
-					RM.Components.exportProgramDistributionBarChartPng(
-						auditorMultiProgram.distribution,
-						auditorMultiProgram.distributionTotal,
-						t('pages.reports.multiProgramEnrollment'),
-						'audit-multi-program-enrollment.png'
-					);
-				},
-				'auditor-report-risk': function () {
-					var total = riskData.reduce(function (sum, row) { return sum + row.count; }, 0);
-					RM.Components.exportRiskBarChartPng(riskData, total, 'audit-caseload-by-risk.png');
-				},
-				'auditor-report-overdue': function () {
-					RM.Components.exportSummaryPanelsPng(
-						t('pages.reports.exportOverdueSummaryTitle'),
-						overdueSummary.total === 1
-							? t('pages.reports.overdueProgramWide', { count: overdueSummary.total })
-							: t('pages.reports.overdueProgramWidePlural', { count: overdueSummary.total }),
-						[
-							{
-								title: t('pages.reports.byRiskLevel'),
-								rows: Object.keys(overdueSummary.byRisk).map(function (level) {
-									return { label: RM.I18n.riskLabel(level), value: overdueSummary.byRisk[level] };
-								})
-							},
-							{
-								title: t('pages.reports.byCadence'),
-								rows: Object.keys(overdueSummary.byCadence).map(function (cadence) {
-									return { label: cadence, value: overdueSummary.byCadence[cadence] };
-								})
-							}
-						],
-						'audit-overdue-followups.png'
-					);
-				},
-				'auditor-report-cbo': function () {
-					RM.Components.exportSummaryPanelsPng(
-						t('pages.reports.exportCboSummaryTitle'),
-						cboSummary.total === 1
-							? t('pages.reports.openReferralsPending', { count: cboSummary.total })
-							: t('pages.reports.openReferralsPendingPlural', { count: cboSummary.total }),
-						[
-							{
-								title: t('pages.reports.byStatus'),
-								rows: Object.keys(cboSummary.byStatus).map(function (status) {
-									return { label: RM.I18n.enumLabel('cboStatus', status), value: cboSummary.byStatus[status] };
-								})
-							},
-							{
-								title: t('pages.reports.byOrganization'),
-								rows: Object.keys(cboSummary.byCbo).map(function (cbo) {
-									return { label: cbo, value: cboSummary.byCbo[cbo] };
-								})
-							}
-						],
-						'audit-cbo-referrals.png'
-					);
-				}
-			},
-			csv: {
-				'auditor-report-program': function () {
-					RM.Components.exportXlsx(
-						'audit-people-by-program-detail.xlsx',
-						RM.ReportEngine.clientsByProgramDetail(null),
-						programColumns(),
-						{ title: t('pages.reports.auditProgramDetail'), sheetName: t('pages.reports.sheetProgram') }
-					);
-				},
-				'auditor-multi-program': function () {
-					RM.Components.exportXlsx(
-						'audit-multi-program-enrollment-detail.xlsx',
-						RM.ReportEngine.multiProgramEnrollmentDetail(null),
-						multiProgramColumns(),
-						{ title: t('pages.reports.auditMultiProgramDetail'), sheetName: t('pages.reports.sheetMultiProgram') }
-					);
-				},
-				'auditor-report-risk': function () {
-					RM.Components.exportXlsx(
-						'audit-caseload-by-risk-detail.xlsx',
-						RM.ReportEngine.caseloadRiskDrilldown(null),
-						riskDrilldownColumns(),
-						{ title: t('pages.reports.auditRiskDetail'), sheetName: t('pages.reports.sheetRiskDetail') }
-					);
-				},
-				'auditor-report-event': function () {
-					var eventData = RM.ReportEngine.enrolledInEvent(null, null);
-					RM.Components.exportXlsx(
-						'audit-event-enrollment-detail.xlsx',
-						eventData,
-						enrollmentColumns(),
-						{
-							title: t('pages.reports.auditEnrollments'),
-							sheetName: t('pages.reports.sheetEnrollments')
-						}
-					);
-				},
-				'auditor-report-overdue': function () {
-					RM.Components.exportXlsx(
-						'audit-overdue-followups-detail.xlsx',
-						RM.ReportEngine.overdueFollowUps(null),
-						overdueColumns(),
-						{ title: t('pages.reports.auditOverdueDetail'), sheetName: t('pages.reports.sheetOverdue') }
-					);
-				},
-				'auditor-report-cbo': function () {
-					RM.Components.exportXlsx(
-						'audit-cbo-referrals-detail.xlsx',
-						RM.ReportEngine.openCBOReferrals(),
-						cboColumns(),
-						{ title: t('pages.reports.auditCboDetail'), sheetName: t('pages.reports.sheetCbo') }
-					);
-				}
-			}
-		}, RM.ReportSections ? RM.ReportSections.getDownloadHandlers('auditor', null, auditorExtendedData) : null));
-
-		wirePageFilterBar(function () {
-			renderAuditorPage();
-		});
+				'<div id="' + prefix + '-event-data"></div>',
+				RM.Components.downloadBar({ imageTarget: prefix + '-event-data', csvId: prefix + '-event' })) +
+			editableReportCard('pages.reports.overdueFollowUps', 'overdue-follow-ups',
+				'<div id="' + prefix + '-overdue"></div>',
+				RM.Components.downloadBar({ imageTarget: prefix + '-overdue', csvId: prefix + '-overdue' })) +
+			editableReportCard('pages.reports.openCboReferrals', 'open-cbo-referrals',
+				'<div id="' + prefix + '-cbo"></div>',
+				RM.Components.downloadBar({ imageTarget: prefix + '-cbo', csvId: prefix + '-cbo' })) +
+			'</div>';
 	}
 
-	function renderAuditorOverdueSummary(summary) {
-		if (!summary.total) {
-			return RM.Components.emptyState(t('pages.reports.noOverdue'), t('pages.reports.noOverdueHint'));
-		}
-		var riskEntries = summaryCountRows(summary.byRisk, function (level) { return RM.I18n.riskLabel(level); });
-		var cadenceEntries = summaryCountRows(summary.byCadence, function (cadence) { return cadence; });
-		return '<p class="liaison-results-summary"><strong>' + summary.total + '</strong> ' +
-			(summary.total === 1
-				? t('pages.reports.overdueProgramWide', { count: summary.total })
-				: t('pages.reports.overdueProgramWidePlural', { count: summary.total })) + '</p>' +
-			'<div class="auditor-summary-grid">' +
-			'<div>' + renderInteractiveSummaryTable('pages.reports.byRiskLevel', riskEntries, 'pages.reports.summaryDrilldownAria', function (level) {
-				return RM.I18n.riskLabel(level);
-			}) + '</div>' +
-			'<div>' + renderInteractiveSummaryTable('pages.reports.byCadence', cadenceEntries, 'pages.reports.summaryDrilldownAria', function (cadence) {
-				return cadence;
-			}) + '</div></div>';
-	}
-
-	function wireAuditorOverdueDrilldown(summary) {
-		var container = document.getElementById('auditor-report-overdue');
-		if (!container || !summary.total) { return; }
-		var tables = container.querySelectorAll('.report-summary-drilldown');
-		if (tables[0]) {
-			wireSummaryDrilldown(tables[0], function (value, row, tableEl) {
-				var rows = RM.ReportEngine.overdueFollowUpsFiltered('risk', value, null);
-				openOverdueListDrawer(
-					t('pages.reports.overdueSummaryDrawerTitle', { label: RM.I18n.riskLabel(value), count: rows.length }),
-					rows,
-					tableEl,
-					'.report-summary-row'
-				);
-			});
-		}
-		if (tables[1]) {
-			wireSummaryDrilldown(tables[1], function (value, row, tableEl) {
-				var rows = RM.ReportEngine.overdueFollowUpsFiltered('cadence', value, null);
-				openOverdueListDrawer(
-					t('pages.reports.overdueSummaryDrawerTitle', { label: value, count: rows.length }),
-					rows,
-					tableEl,
-					'.report-summary-row'
-				);
-			});
-		}
-	}
-
-	function renderAuditorCboSummary(summary) {
-		if (!summary.total) {
-			return RM.Components.emptyState(t('pages.reports.noOpenCbo'), t('pages.reports.noOpenCboHint'));
-		}
-		var statusEntries = summaryCountRows(summary.byStatus, function (status) {
-			return RM.I18n.enumLabel('cboStatus', status);
-		});
-		var cboEntries = summaryCountRows(summary.byCbo, function (cbo) { return cbo; });
-		return '<p class="liaison-results-summary"><strong>' + summary.total + '</strong> ' +
-			(summary.total === 1
-				? t('pages.reports.openReferralsPending', { count: summary.total })
-				: t('pages.reports.openReferralsPendingPlural', { count: summary.total })) + '</p>' +
-			'<div class="auditor-summary-grid">' +
-			'<div>' + renderInteractiveSummaryTable('pages.reports.byStatus', statusEntries, 'pages.reports.summaryDrilldownAria', function (status) {
-				return RM.I18n.enumLabel('cboStatus', status);
-			}) + '</div>' +
-			'<div>' + renderInteractiveSummaryTable('pages.reports.byOrganization', cboEntries, 'pages.reports.summaryDrilldownAria', function (cbo) {
-				return cbo;
-			}) + '</div></div>';
-	}
-
-	function wireAuditorCboDrilldown(summary) {
-		var container = document.getElementById('auditor-report-cbo');
-		if (!container || !summary.total) { return; }
-		var tables = container.querySelectorAll('.report-summary-drilldown');
-		if (tables[0]) {
-			wireSummaryDrilldown(tables[0], function (value, row, tableEl) {
-				var rows = RM.ReportEngine.openCBOReferralsFiltered('status', value);
-				openCboListDrawer(
-					t('pages.reports.cboSummaryDrawerTitle', { label: RM.I18n.enumLabel('cboStatus', value), count: rows.length }),
-					rows,
-					tableEl,
-					'.report-summary-row'
-				);
-			});
-		}
-		if (tables[1]) {
-			wireSummaryDrilldown(tables[1], function (value, row, tableEl) {
-				var rows = RM.ReportEngine.openCBOReferralsFiltered('cbo', value);
-				openCboListDrawer(
-					t('pages.reports.cboSummaryDrawerTitle', { label: value, count: rows.length }),
-					rows,
-					tableEl,
-					'.report-summary-row'
-				);
-			});
-		}
-	}
-
-	function renderPage() {
+	function renderTierPage() {
 		RM.Components.closeSideDrawer();
 
 		if (document.getElementById('reports-filter-bar') && RM.ReportRuntimeFilters) {
@@ -665,83 +417,96 @@
 
 		var main = document.getElementById('page-content');
 		var user = RM.Session.getCurrentUser();
-		var programManagerId = user.role === 'case_manager' ? user.id : null;
+		var tier = currentReportTier();
+		var isAuditor = RM.Permissions.isAuditor();
+		var prefix = isAuditor ? 'auditor' : 'report';
+		var programManagerId = user && user.role === 'case_manager' ? user.id : null;
+
+		var bodyHtml = '';
+		if (tier === 'caseload') {
+			bodyHtml = renderCaseloadHtml(prefix);
+		} else if (RM.ReportSections) {
+			bodyHtml = (isAuditor ? renderAuditorSummaryHtml() : '') +
+				RM.ReportSections.buildTierHtml(prefix, tier);
+		}
+
+		main.innerHTML = RM.Components.modulePageHeader(activeNavIdForPage()) +
+			renderPageFilterBar() + bodyHtml;
+
+		if (tier === 'caseload') {
+			mountCaseloadReports(prefix, programManagerId, user, main);
+		} else if (RM.ReportSections) {
+			var tierData = RM.ReportSections.mount(prefix, programManagerId, tier);
+			RM.Components.wireDownloadActions(main, RM.ReportSections.getDownloadHandlers(prefix, programManagerId, tierData));
+		}
+
+		if (RM.ReportSubscribe) { RM.ReportSubscribe.wire(main); }
+
+		wirePageFilterBar(function () {
+			renderTierPage();
+		});
+	}
+
+	function renderAuditorPage() {
+		window.location.replace('reports.html?tier=integrity');
+	}
+
+	function mountCaseloadReports(prefix, programManagerId, user, main) {
 		var programData = RM.ReportEngine.clientsByProgram(programManagerId);
 		var programGroups = RM.ReportEngine.clientsByProgramGroups(programManagerId);
 		var programTotal = programData.reduce(function (sum, row) { return sum + row.count; }, 0);
 		var riskData = RM.ReportEngine.caseloadByRisk(programManagerId);
 
-		main.innerHTML =
-			RM.Components.modulePageHeader('reports') +
-			renderPageFilterBar() +
-			(RM.ReportSections ? RM.ReportSections.buildExtendedHtml('report') : '') +
-			programReportCard('report-program', 'report-program', 'clients-by-program') +
-			multiProgramReportCard('report', 'multi-program-enrollment') +
-			editableReportCard('pages.reports.caseloadByRisk', 'caseload-by-risk',
-				'<div id="report-risk"></div>',
-				RM.Components.downloadBar({ imageTarget: 'report-risk', csvId: 'report-risk' })) +
-			editableReportCard('pages.reports.clientsEnrolledInEvent', 'event-enrollment',
-				'<p class="text-muted report-card-lead">' + RM.Components.escapeHtml(t('pages.reports.eventEnrollmentFilterHint')) + '</p>' +
-				'<div id="report-event-data"></div>',
-				RM.Components.downloadBar({ imageTarget: 'report-event-data', csvId: 'report-event' })) +
-			editableReportCard('pages.reports.overdueFollowUps', 'overdue-follow-ups',
-				'<div id="report-overdue"></div>',
-				RM.Components.downloadBar({ imageTarget: 'report-overdue', csvId: 'report-overdue' })) +
-			editableReportCard('pages.reports.openCboReferrals', 'open-cbo-referrals',
-				'<div id="report-cbo"></div>',
-				RM.Components.downloadBar({ imageTarget: 'report-cbo', csvId: 'report-cbo' }));
-
-		renderProgramDistributionChart('report-program', programData, programGroups);
-		var reportMultiProgram = mountMultiProgramReport('report', programManagerId);
-		var reportExtendedData = RM.ReportSections ? RM.ReportSections.mount('report', programManagerId) : null;
-		document.getElementById('report-risk').innerHTML = renderRiskTable(riskData);
-		wireRiskDrilldown(RM.ReportEngine.clientsGroupedByRisk(programManagerId));
+		renderProgramDistributionChart(prefix + '-program', programData, programGroups);
+		var multiProgram = mountMultiProgramReport(prefix, programManagerId);
+		document.getElementById(prefix + '-risk').innerHTML = renderRiskTable(riskData);
+		wireRiskDrilldown(RM.ReportEngine.clientsGroupedByRisk(programManagerId), prefix + '-risk');
 
 		function refreshEventReport() {
 			var eventData = RM.ReportEngine.enrolledInEvent(null, programManagerId);
-			document.getElementById('report-event-data').innerHTML = eventData.length
+			document.getElementById(prefix + '-event-data').innerHTML = eventData.length
 				? renderEnrollmentTable(eventData)
 				: RM.Components.emptyState(t('pages.reports.noEnrollments'), t('pages.reports.noEnrollmentsHint'));
-			wireEnrollmentDrilldown(eventData);
+			wireEnrollmentDrilldown(eventData, prefix + '-event-data');
 		}
 
 		refreshEventReport();
 
-		var overdueData = RM.ReportEngine.overdueFollowUps(user.role === 'case_manager' ? user.id : null);
-		document.getElementById('report-overdue').innerHTML = overdueData.length
+		var overdueData = RM.ReportEngine.overdueFollowUps(user && user.role === 'case_manager' ? user.id : null);
+		document.getElementById(prefix + '-overdue').innerHTML = overdueData.length
 			? renderOverdueTable(overdueData)
 			: RM.Components.emptyState(t('pages.reports.noOverdue'), t('pages.reports.noOverdueHint'));
-		wireOverdueDrilldown(overdueData);
+		wireOverdueDrilldown(overdueData, prefix + '-overdue');
 
 		var cboData = RM.ReportEngine.openCBOReferrals(programManagerId);
-		document.getElementById('report-cbo').innerHTML = cboData.length
+		document.getElementById(prefix + '-cbo').innerHTML = cboData.length
 			? renderCboTable(cboData)
 			: RM.Components.emptyState(t('pages.reports.noOpenCbo'), t('pages.reports.noOpenCboHint'));
-		wireCboDrilldown(cboData);
+		wireCboDrilldown(cboData, prefix + '-cbo');
 
-		RM.Components.wireDownloadActions(main, mergeDownloadHandlers({
+		RM.Components.wireDownloadActions(main, {
 			images: {
-				'report-program': function () {
+				[prefix + '-program']: function () {
 					RM.Components.exportProgramDistributionBarChartPng(
 						programData,
 						programTotal,
 						t('pages.reports.clientsByProgram'),
-						'people-by-program.png'
+						prefix + '-people-by-program.png'
 					);
 				},
-				'report-multi-program-chart': function () {
+				[prefix + '-multi-program-chart']: function () {
 					RM.Components.exportProgramDistributionBarChartPng(
-						reportMultiProgram.distribution,
-						reportMultiProgram.distributionTotal,
+						multiProgram.distribution,
+						multiProgram.distributionTotal,
 						t('pages.reports.multiProgramEnrollment'),
-						'multi-program-enrollment.png'
+						prefix + '-multi-program-enrollment.png'
 					);
 				},
-				'report-risk': function () {
+				[prefix + '-risk']: function () {
 					var total = riskData.reduce(function (sum, row) { return sum + row.count; }, 0);
-					RM.Components.exportRiskBarChartPng(riskData, total, 'caseload-by-risk.png');
+					RM.Components.exportRiskBarChartPng(riskData, total, prefix + '-caseload-by-risk.png');
 				},
-				'report-event-data': function () {
+				[prefix + '-event-data']: function () {
 					var eventData = RM.ReportEngine.enrolledInEvent(null, programManagerId);
 					var subtitle = (RM.ReportEngine._filterContext && RM.ReportEngine._filterContext.eventId)
 						? RM.ReportEngine.eventName(RM.ReportEngine._filterContext.eventId)
@@ -750,81 +515,77 @@
 						t('pages.reports.exportEnrollmentTitle'),
 						enrollmentColumns(),
 						eventData,
-						'event-enrollment.png',
+						prefix + '-event-enrollment.png',
 						{ subtitle: subtitle }
 					);
 				},
-				'report-overdue': function () {
+				[prefix + '-overdue']: function () {
 					RM.Components.exportDataTablePng(
 						t('pages.reports.exportOverdueTitle'),
 						overdueColumns(),
 						overdueData,
-						'overdue-followups.png'
+						prefix + '-overdue-followups.png'
 					);
 				},
-				'report-cbo': function () {
+				[prefix + '-cbo']: function () {
 					RM.Components.exportDataTablePng(
 						t('pages.reports.exportCboTitle'),
 						cboColumns(),
 						cboData,
-						'open-cbo-referrals.png'
+						prefix + '-open-cbo-referrals.png'
 					);
 				}
 			},
 			csv: {
-				'report-program': function () {
+				[prefix + '-program']: function () {
 					RM.Components.exportXlsx(
-						'people-by-program-detail.xlsx',
+						prefix + '-people-by-program-detail.xlsx',
 						RM.ReportEngine.clientsByProgramDetail(programManagerId),
 						programColumns(),
 						{ title: t('pages.reports.programDetail'), sheetName: t('pages.reports.sheetProgram') }
 					);
 				},
-				'report-multi-program': function () {
+				[prefix + '-multi-program']: function () {
 					RM.Components.exportXlsx(
-						'multi-program-enrollment-detail.xlsx',
+						prefix + '-multi-program-enrollment-detail.xlsx',
 						RM.ReportEngine.multiProgramEnrollmentDetail(programManagerId),
 						multiProgramColumns(),
 						{ title: t('pages.reports.multiProgramDetail'), sheetName: t('pages.reports.sheetMultiProgram') }
 					);
 				},
-				'report-risk': function () {
+				[prefix + '-risk']: function () {
 					RM.Components.exportXlsx(
-						'caseload-by-risk-detail.xlsx',
+						prefix + '-caseload-by-risk-detail.xlsx',
 						RM.ReportEngine.caseloadRiskDrilldown(user.role === 'case_manager' ? user.id : null),
 						riskDrilldownColumns(),
 						{ title: t('pages.reports.caseloadRiskDetail'), sheetName: t('pages.reports.sheetRiskDetail') }
 					);
 				},
-				'report-event': function () {
+				[prefix + '-event']: function () {
 					RM.Components.exportXlsx(
-						'event-enrollment-detail.xlsx',
+						prefix + '-event-enrollment-detail.xlsx',
 						RM.ReportEngine.enrolledInEvent(null, programManagerId),
 						enrollmentColumns(),
 						{ title: t('pages.reports.eventEnrollmentDetail'), sheetName: t('pages.reports.sheetEnrollments') }
 					);
 				},
-				'report-overdue': function () {
+				[prefix + '-overdue']: function () {
 					RM.Components.exportXlsx(
-						'overdue-followups-detail.xlsx',
+						prefix + '-overdue-followups-detail.xlsx',
 						RM.ReportEngine.overdueFollowUps(user.role === 'case_manager' ? user.id : null),
 						overdueColumns(),
 						{ title: t('pages.reports.overdueDetail'), sheetName: t('pages.reports.sheetOverdue') }
 					);
 				},
-				'report-cbo': function () {
+				[prefix + '-cbo']: function () {
 					RM.Components.exportXlsx(
-						'open-cbo-referrals-detail.xlsx',
+						prefix + '-open-cbo-referrals-detail.xlsx',
 						cboData,
 						cboColumns(),
 						{ title: t('pages.reports.cboDetail'), sheetName: t('pages.reports.sheetCbo') }
 					);
 				}
 			}
-		}, RM.ReportSections ? RM.ReportSections.getDownloadHandlers('report', programManagerId, reportExtendedData) : null));
-
-		wirePageFilterBar(function () {
-			renderPage();
 		});
 	}
 
@@ -931,8 +692,9 @@
 			}).join('') + '</tbody></table>';
 	}
 
-	function wireOverdueDrilldown(overdueData) {
-		var table = document.querySelector('#report-overdue .data-table-interactive');
+	function wireOverdueDrilldown(overdueData, containerId) {
+		containerId = containerId || 'report-overdue';
+		var table = document.querySelector('#' + containerId + ' .data-table-interactive');
 		var byClientId = {};
 		overdueData.forEach(function (row) { byClientId[row.clientId] = row; });
 
@@ -1072,8 +834,9 @@
 			}).join('') + '</tbody></table>';
 	}
 
-	function wireCboDrilldown(cboData) {
-		var table = document.querySelector('#report-cbo .data-table-interactive');
+	function wireCboDrilldown(cboData, containerId) {
+		containerId = containerId || 'report-cbo';
+		var table = document.querySelector('#' + containerId + ' .data-table-interactive');
 
 		RM.Components.wireInteractiveTable(table, '.cbo-row', function (row) {
 			var idx = parseInt(row.getAttribute('data-row-index'), 10);

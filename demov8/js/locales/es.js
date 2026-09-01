@@ -18,6 +18,12 @@
 			servicesHub: 'Coordinación de servicios',
 			bulkEnroll: 'Asignación masiva de servicios',
 			reports: 'Informes',
+			standardReports: 'Informes estándar',
+			reportsExecutive: 'Informes ejecutivos',
+			reportsOperational: 'Informes operativos',
+			reportsIntegrity: 'Integridad y auditoría',
+			reportsCaseload: 'Informes de carga y programas',
+			customReports: 'Informes personalizados',
 			reportBuilder: 'Constructor de informes',
 			auditReports: 'Informes de auditoría del programa',
 			referralIntake: 'Referencia e ingreso'

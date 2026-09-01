@@ -54,7 +54,8 @@
 					'<div class="dashboard-stack">' +
 					'<div class="card">' +
 					'<div class="card-header"><h2>' + RM.Components.escapeHtml(t('dashboard.programOverview')) + '</h2>' +
-					RM.Components.downloadBar({ imageTarget: 'dashboard-program-visual', csvId: 'dashboard-risk-drilldown' }) +
+					dashboardCardActions('dashboard-program-overview', 'dashboard.programOverview',
+						RM.Components.downloadBar({ imageTarget: 'dashboard-program-visual', csvId: 'dashboard-risk-drilldown' })) +
 					'</div>' +
 					'<div id="dashboard-program-visual">' +
 					'<div class="snapshot-bar snapshot-bar-success">' +
@@ -74,14 +75,19 @@
 					'</div>' +
 					'<div class="card">' +
 					'<div class="card-header"><h2>' + RM.Components.escapeHtml(t('dashboard.riskMix')) + '</h2>' +
-					RM.Components.downloadBar({ imageTarget: 'donut-chart-visual' }) + '</div>' +
+					dashboardCardActions('dashboard-risk-mix', 'dashboard.riskMix',
+						RM.Components.downloadBar({ imageTarget: 'donut-chart-visual' })) +
+					'</div>' +
 					'<div id="donut-chart-visual"><div id="donut-chart"></div></div></div>' +
 					'<div class="card" id="caseload-section">' +
 					'<div class="card-header caseload-card-header">' +
 					'<h2>' + RM.Components.escapeHtml(t('dashboard.fullCaseload')) + '</h2>' +
-					'<div class="caseload-card-actions">' +
+					'<div class="caseload-card-actions report-card-actions">' +
+					(RM.ReportSubscribe
+						? RM.ReportSubscribe.subscribeButtonHtml('dashboard-full-caseload', 'dashboard', t('dashboard.fullCaseload'))
+						: '') +
 					RM.Components.downloadBar({ csvId: 'dashboard-caseload-drilldown' }) +
-					'<a href="' + RM.Links.page('client-search') + '" class="btn btn-sm btn-secondary">' + RM.Components.escapeHtml(t('dashboard.searchAll')) + '</a></div></div>' +
+					'<a href="' + RM.Links.page('client-search') + '" class="btn btn-sm btn-secondary report-card-btn">' + RM.Components.escapeHtml(t('dashboard.searchAll')) + '</a></div></div>' +
 					'<div class="caseload-filter-bar" role="toolbar" aria-label="' + RM.Components.escapeHtml(t('dashboard.filterCaseload')) + '">' +
 					'<button type="button" class="caseload-filter-btn is-active" data-filter="all" aria-pressed="true">' + RM.Components.escapeHtml(t('dashboard.filterAll', { count: caseload.length })) + '</button>' +
 					'<button type="button" class="caseload-filter-btn" data-filter="overdue" aria-pressed="false"' +
@@ -98,6 +104,7 @@
 				setCaseloadFilter('all');
 				wireStatScroll(main);
 				wireDashboardDownloads(main, user, caseload, overdueByClientId, riskReport, total, success, highCount, overdue.length, incomplete.length);
+				if (RM.ReportSubscribe) { RM.ReportSubscribe.wire(main); }
 			}
 		});
 	});
@@ -221,6 +228,13 @@
 		}).filter(function (r) { return r.count > 0; });
 	}
 
+	function dashboardCardActions(reportKey, titleKey, downloadBarHtml) {
+		var subscribeBtn = RM.ReportSubscribe
+			? RM.ReportSubscribe.subscribeButtonHtml(reportKey, 'dashboard', t(titleKey))
+			: '';
+		return '<div class="report-card-actions">' + subscribeBtn + (downloadBarHtml || '') + '</div>';
+	}
+
 	function renderSuccessBanner(metrics) {
 		var progressRows = [
 			{ label: t('dashboard.intakesComplete'), pct: metrics.intakeCompletePct },
@@ -234,7 +248,8 @@
 		return '<section class="card dashboard-success-card" id="dashboard-success-card" aria-label="' + RM.Components.escapeHtml(t('dashboard.programImpactAria')) + '">' +
 			'<div class="card-header dashboard-success-card-header">' +
 			'<h2>' + RM.Components.escapeHtml(t('dashboard.programImpact')) + '</h2>' +
-			RM.Components.downloadBar({ imageTarget: 'dashboard-success-card' }) +
+			dashboardCardActions('dashboard-program-impact', 'dashboard.programImpact',
+				RM.Components.downloadBar({ imageTarget: 'dashboard-success-card' })) +
 			'</div>' +
 			'<div class="dashboard-success-layout">' +
 			'<div class="success-ring-wrap" aria-hidden="true">' +

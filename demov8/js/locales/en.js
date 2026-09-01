@@ -18,6 +18,12 @@
 			servicesHub: 'Service Coordination',
 			bulkEnroll: 'Bulk Service Allocation',
 			reports: 'Reports',
+			standardReports: 'Standard Reports',
+			reportsExecutive: 'Executive Reports',
+			reportsOperational: 'Operational Reports',
+			reportsIntegrity: 'Integrity & Audit',
+			reportsCaseload: 'Caseload & Program Reports',
+			customReports: 'Custom Reports',
 			reportBuilder: 'Custom Report Builder',
 			auditReports: 'Program Audit Reports',
 			referralIntake: 'Referral & Intake'

@@ -139,7 +139,7 @@
 			return matches[0];
 		},
 
-		_buildContext: function (primaryEntityId, primaryRow, joins, joinAggregates) {
+		_buildContext: function (primaryEntityId, primaryRow, joins, joinAggregates, filters) {
 			var self = this;
 			var context = {};
 			context[primaryEntityId] = primaryRow;
@@ -151,6 +151,7 @@
 				var relation = RM.ReportDataModel.getRelation(primaryEntityId, relationKey);
 				if (relation.type === 'hasMany' && aggregate === 'count') {
 					var matches = self._resolveRelated(primaryEntityId, primaryRow, joinEntityId, relationKey, 'count') || [];
+					matches = self._filterEntityRows(matches, filters, joinEntityId);
 					context[joinEntityId] = { __count: matches.length };
 					return;
 				}
@@ -160,10 +161,26 @@
 			return context;
 		},
 
-		_readColumnValue: function (column, context) {
+		_filterEntityRows: function (rows, filters, entityId) {
+			if (!rows || !rows.length || !filters || !filters.length) { return rows || []; }
+			var entityFilters = filters.filter(function (filter) { return filter.entity === entityId; });
+			if (!entityFilters.length) { return rows; }
+			var self = this;
+			return rows.filter(function (row) {
+				return entityFilters.every(function (filter) {
+					return self._matchesFilter(row[filter.field], filter);
+				});
+			});
+		},
+
+		_readColumnValue: function (column, context, primaryEntityId) {
 			if (column.field === '__count') {
 				var bucket = context[column.entity];
-				return bucket && bucket.__count != null ? bucket.__count : '';
+				if (bucket && bucket.__count != null) { return bucket.__count; }
+				if (primaryEntityId && column.entity === primaryEntityId && bucket && bucket.id != null) {
+					return 1;
+				}
+				return '';
 			}
 			var source = context[column.entity];
 			if (!source) { return ''; }
@@ -222,8 +239,10 @@
 			var outputRows = [];
 
 			primaryRows.forEach(function (primaryRow) {
-				var context = self._buildContext(primaryEntityId, primaryRow, joins, joinAggregates);
-				var joinedFilters = filters.filter(function (f) { return f.entity !== primaryEntityId; });
+				var context = self._buildContext(primaryEntityId, primaryRow, joins, joinAggregates, filters);
+				var joinedFilters = filters.filter(function (filter) {
+					return filter.entity !== primaryEntityId && joinAggregates[filter.entity] !== 'count';
+				});
 				if (joinedFilters.length) {
 					var passes = joinedFilters.every(function (filter) {
 						var source = context[filter.entity];
@@ -236,7 +255,7 @@
 				var row = {};
 				columns.forEach(function (column, index) {
 					var key = outputColumns[index].key;
-					var raw = self._readColumnValue(column, context);
+					var raw = self._readColumnValue(column, context, primaryEntityId);
 					row[key] = self.formatValue(column.entity, column.field, raw);
 				});
 				outputRows.push(row);
@@ -290,8 +309,10 @@
 			}), entityResolver);
 
 			primaryRows.forEach(function (primaryRow) {
-				var context = self._buildContext(primaryEntityId, primaryRow, joins, joinAggregates);
-				var joinedFilters = filters.filter(function (f) { return f.entity !== primaryEntityId; });
+				var context = self._buildContext(primaryEntityId, primaryRow, joins, joinAggregates, filters);
+				var joinedFilters = filters.filter(function (filter) {
+					return filter.entity !== primaryEntityId && joinAggregates[filter.entity] !== 'count';
+				});
 				if (joinedFilters.length) {
 					var passes = joinedFilters.every(function (filter) {
 						var source = context[filter.entity];
@@ -393,7 +414,7 @@
 			if (aggregate === 'distinct') {
 				var distinctKey;
 				if (yAxis.field) {
-					distinctKey = this._readColumnValue({ entity: yAxis.entity, field: yAxis.field }, context);
+					distinctKey = this._readColumnValue({ entity: yAxis.entity, field: yAxis.field }, context, primaryEntityId);
 				} else {
 					var primaryRow = context[primaryEntityId];
 					distinctKey = primaryRow && primaryRow.id != null ? primaryRow.id : bucket.n;
@@ -404,7 +425,7 @@
 
 			if (!yAxis.field) { return; }
 
-			var yRaw = this._readColumnValue({ entity: yAxis.entity, field: yAxis.field }, context);
+			var yRaw = this._readColumnValue({ entity: yAxis.entity, field: yAxis.field }, context, primaryEntityId);
 			var num = Number(yRaw);
 			if (isNaN(num)) { return; }
 
@@ -494,7 +515,7 @@
 			var self = this;
 
 			contexts.forEach(function (context) {
-				var xRaw = self._readColumnValue({ entity: xAxis.entity, field: xAxis.field }, context);
+				var xRaw = self._readColumnValue({ entity: xAxis.entity, field: xAxis.field }, context, primaryEntityId);
 				var bucketInfo = self._resolveXBucket(xRaw, xAxis, xGrouping);
 				var bucketKey = bucketInfo.label;
 
@@ -547,6 +568,91 @@
 				xGrouping: xGrouping,
 				points: points,
 				meta: { rowCount: contexts.length, groupCount: points.length }
+			};
+		},
+
+		previewFieldData: function (entityId, fieldId, user, options) {
+			options = options || {};
+			var self = this;
+			var limit = options.limit || 25;
+			var primaryEntityId = options.primaryEntityId || entityId;
+			var meta = RM.ReportDataModel.fieldMeta(entityId, fieldId);
+
+			if (fieldId === '__count__') {
+				var primaryRows = this._scopePrimaryRows(primaryEntityId, this._getRepoRows(primaryEntityId), user);
+				return {
+					label: RM.I18n ? RM.I18n.t('pages.reportBuilder.recordCount') : 'Record count',
+					entityLabel: RM.ReportDataModel.label(primaryEntityId),
+					role: 'measure',
+					type: 'count',
+					totalRows: primaryRows.length,
+					emptyCount: 0,
+					distinctCount: 1,
+					isRecordCount: true,
+					values: [{
+						value: String(primaryRows.length),
+						count: primaryRows.length
+					}]
+				};
+			}
+
+			if (fieldId === '__count') {
+				var scopedPrimary = this._scopePrimaryRows(primaryEntityId, this._getRepoRows(primaryEntityId), user);
+				var countBuckets = {};
+				scopedPrimary.forEach(function (row) {
+					var ctx = self._buildContext(primaryEntityId, row, [entityId], { [entityId]: 'count' });
+					var n = ctx[entityId] && ctx[entityId].__count != null ? ctx[entityId].__count : 0;
+					var key = String(n);
+					countBuckets[key] = (countBuckets[key] || 0) + 1;
+				});
+				var countValues = Object.keys(countBuckets).map(function (key) {
+					return { value: key, count: countBuckets[key] };
+				}).sort(function (a, b) { return b.count - a.count; });
+				return {
+					label: RM.ReportDataModel.fieldDisplayLabel(entityId, fieldId),
+					entityLabel: RM.ReportDataModel.label(entityId),
+					role: 'measure',
+					type: 'count',
+					totalRows: scopedPrimary.length,
+					emptyCount: 0,
+					distinctCount: countValues.length,
+					values: countValues.slice(0, limit)
+				};
+			}
+
+			var rows = this._scopePrimaryRows(entityId, this._getRepoRows(entityId), user);
+			var emptyCount = 0;
+			var valueCounts = {};
+
+			rows.forEach(function (row) {
+				var raw = row[fieldId];
+				if (raw == null || raw === '') {
+					emptyCount++;
+					return;
+				}
+				var formatted = self.formatValue(entityId, fieldId, raw);
+				var key = String(formatted);
+				if (!valueCounts[key]) {
+					valueCounts[key] = { value: formatted, count: 0 };
+				}
+				valueCounts[key].count++;
+			});
+
+			var values = Object.keys(valueCounts).map(function (key) {
+				return valueCounts[key];
+			}).sort(function (a, b) {
+				return b.count - a.count || compareValues(a.value, b.value);
+			});
+
+			return {
+				label: RM.ReportDataModel.fieldDisplayLabel(entityId, fieldId),
+				entityLabel: RM.ReportDataModel.label(entityId),
+				role: RM.ReportDataModel.fieldRole(entityId, fieldId),
+				type: meta ? meta.type : 'text',
+				totalRows: rows.length,
+				emptyCount: emptyCount,
+				distinctCount: values.length,
+				values: values.slice(0, limit)
 			};
 		}
 	};
